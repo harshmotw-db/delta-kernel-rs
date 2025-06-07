@@ -4,6 +4,7 @@ use std::sync::Arc;
 use delta_kernel::arrow::array::{
     Int32Array, MapBuilder, MapFieldNames, StringArray, StringBuilder, TimestampMicrosecondArray,
 };
+use delta_kernel::arrow::array::{ArrayRef, BinaryArray, StructArray};
 use delta_kernel::arrow::datatypes::{DataType as ArrowDataType, Field, Schema as ArrowSchema};
 use delta_kernel::arrow::error::ArrowError;
 use delta_kernel::arrow::record_batch::RecordBatch;
@@ -64,6 +65,7 @@ async fn create_table(
     partition_columns: &[&str],
     use_37_protocol: bool,
     enable_timestamp_without_timezone: bool,
+    enable_variant: bool,
 ) -> Result<Table, Box<dyn std::error::Error>> {
     let table_id = "test_id";
     let schema = serde_json::to_string(&schema)?;
@@ -74,6 +76,10 @@ async fn create_table(
         if enable_timestamp_without_timezone {
             reader_features.push("timestampNtz");
             writer_features.push("timestampNtz");
+        }
+        if enable_variant {
+            reader_features.push("variantType");
+            writer_features.push("variantType");
         }
         (reader_features, writer_features)
     };
@@ -187,6 +193,7 @@ async fn setup_tables(
                 partition_columns,
                 true,
                 false,
+                false,
             )
             .await?,
             engine_37,
@@ -199,6 +206,7 @@ async fn setup_tables(
                 table_location_11,
                 schema,
                 partition_columns,
+                false,
                 false,
                 false,
             )
@@ -870,6 +878,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
         &[],
         true,
         true, // enable "timestamp without timezone" feature
+        false,
     )
     .await?;
 
@@ -917,6 +926,100 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     let commit1 = store
         .get(&Path::from(
             "/test_table_timestamp_ntz/_delta_log/00000000000000000001.json",
+        ))
+        .await?;
+
+    let parsed_commits: Vec<_> = Deserializer::from_slice(&commit1.bytes().await?)
+        .into_iter::<serde_json::Value>()
+        .try_collect()?;
+
+    // Check that we have the expected number of commits (commitInfo + add)
+    assert_eq!(parsed_commits.len(), 2);
+
+    // Check that the add action exists
+    assert!(parsed_commits[1].get("add").is_some());
+
+    // Verify the data can be read back correctly
+    test_read(&ArrowEngineData::new(data), &table, engine)?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
+    // setup tracing
+    let _ = tracing_subscriber::fmt::try_init();
+
+    // create a table with TIMESTAMP_NTZ column
+    let schema = Arc::new(StructType::new(vec![StructField::nullable(
+        "v",
+        DataType::VARIANT,
+    )]));
+
+    let (store, engine, table_location) = setup("test_table_variant", true);
+    let table = create_table(
+        store.clone(),
+        table_location,
+        schema.clone(),
+        &[],
+        true,
+        false,
+        true, // enable "variantType" feature
+    )
+    .await?;
+
+    let commit_info = new_commit_info()?;
+
+    let mut txn = table
+        .new_transaction(&engine)?
+        .with_commit_info(commit_info);
+    
+    // First value corresponds to the variant value "1". Second value corresponds to the variant
+    // representing the JSON Object {"a":2}
+    let value = vec![Some(&[0x0C, 0x01][..]), Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
+    let metadata = vec![Some(&[0x01, 0x00, 0x00][..]), Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
+
+    let value_array = Arc::new(BinaryArray::from(value)) as ArrayRef;
+    let metadata_array = Arc::new(BinaryArray::from(metadata)) as ArrayRef;
+
+    let fields = vec![
+        Field::new("value", ArrowDataType::Binary, false),
+        Field::new("metadata", ArrowDataType::Binary, false),
+    ];
+
+    let variant_array = StructArray::try_new(
+        fields.into(),
+        vec![value_array, metadata_array],
+        None,
+    ).unwrap();
+
+    let data = RecordBatch::try_new(
+        Arc::new(schema.as_ref().try_into_arrow()?),
+        vec![Arc::new(variant_array)],
+    ).unwrap();
+
+    // Write data
+    let engine = Arc::new(engine);
+    let write_context = Arc::new(txn.get_write_context());
+
+    let write_metadata = engine
+        .write_parquet(
+            &ArrowEngineData::new(data.clone()),
+            write_context.as_ref(),
+            HashMap::new(),
+            true,
+        )
+        .await?;
+
+    txn.add_write_metadata(write_metadata);
+
+    // Commit the transaction
+    txn.commit(engine.as_ref())?;
+
+    // Verify the commit was written correctly
+    let commit1 = store
+        .get(&Path::from(
+            "/test_table_variant/_delta_log/00000000000000000001.json",
         ))
         .await?;
 

@@ -117,6 +117,13 @@ impl TryFromKernel<&MapType> for ArrowField {
     }
 }
 
+pub(crate) fn variant_arrow_type() -> ArrowDataType {
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, false);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, false);
+    let fields = vec![value_field, metadata_field];
+    ArrowDataType::Struct(fields.into())
+}
+
 impl TryFromKernel<&DataType> for ArrowDataType {
     fn try_from_kernel(t: &DataType) -> Result<Self, ArrowError> {
         match t {
@@ -148,6 +155,7 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                     PrimitiveType::TimestampNtz => {
                         Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
                     }
+                    PrimitiveType::Variant => Ok(variant_arrow_type())
                 }
             }
             DataType::Struct(s) => Ok(ArrowDataType::Struct(

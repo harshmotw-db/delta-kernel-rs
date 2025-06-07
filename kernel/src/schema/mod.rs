@@ -554,6 +554,7 @@ pub enum PrimitiveType {
     Boolean,
     Binary,
     Date,
+    Variant,
     /// Microsecond precision timestamp, adjusted to UTC.
     Timestamp,
     #[serde(rename = "timestamp_ntz")]
@@ -623,6 +624,7 @@ impl Display for PrimitiveType {
             PrimitiveType::Decimal(dtype) => {
                 write!(f, "decimal({},{})", dtype.precision(), dtype.scale())
             }
+            PrimitiveType::Variant => write!(f, "variant")
         }
     }
 }
@@ -695,6 +697,7 @@ impl DataType {
     pub const DATE: Self = DataType::Primitive(PrimitiveType::Date);
     pub const TIMESTAMP: Self = DataType::Primitive(PrimitiveType::Timestamp);
     pub const TIMESTAMP_NTZ: Self = DataType::Primitive(PrimitiveType::TimestampNtz);
+    pub const VARIANT: Self = DataType::Primitive(PrimitiveType::Variant);
 
     pub fn decimal(precision: u8, scale: u8) -> DeltaResult<Self> {
         Ok(PrimitiveType::decimal(precision, scale)?.into())
@@ -1103,6 +1106,26 @@ mod tests {
         assert_eq!(
             json_str,
             r#"{"name":"a","type":"decimal(10,2)","nullable":false,"metadata":{}}"#
+        );
+    }
+
+    #[test]
+    fn test_roundtrip_variant() {
+        let data = r#"
+        {
+            "name": "v",
+            "type": "variant",
+            "nullable": false,
+            "metadata": {}
+        }
+        "#;
+        let field: StructField = serde_json::from_str(data).unwrap();
+        assert_eq!(field.data_type, DataType::VARIANT);
+
+        let json_str = serde_json::to_string(&field).unwrap();
+        assert_eq!(
+            json_str,
+            r#"{"name":"v","type":"variant","nullable":false,"metadata":{}}"#
         );
     }
 

@@ -65,6 +65,9 @@ impl EnsureDataTypes {
             (DataType::Primitive(_), _) if arrow_type.is_primitive() => {
                 check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
+            (&DataType::VARIANT, _) => {
+                check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
+            }
             // strings, bools, and binary  aren't primitive in arrow
             (&DataType::BOOLEAN, ArrowDataType::Boolean)
             | (&DataType::STRING, ArrowDataType::Utf8)

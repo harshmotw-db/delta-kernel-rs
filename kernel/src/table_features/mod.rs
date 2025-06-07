@@ -12,6 +12,8 @@ pub use column_mapping::{validate_schema_column_mapping, ColumnMappingMode};
 pub(crate) use timestamp_ntz::validate_timestamp_ntz_feature_support;
 mod column_mapping;
 mod timestamp_ntz;
+pub(crate) use variant_type::validate_variant_type_feature_support;
+mod variant_type;
 
 /// Reader features communicate capabilities that must be implemented in order to correctly read a
 /// given table. That is, readers must implement and respect all features listed in a table's
@@ -56,6 +58,9 @@ pub(crate) enum ReaderFeature {
     VacuumProtocolCheck,
     /// This feature enables support for the variant data type, which stores semi-structured data.
     VariantType,
+    #[strum(serialize = "variantType-preview")]
+    #[serde(rename = "variantType-preview")]
+    VariantTypePreview,
     #[serde(untagged)]
     #[strum(default)]
     Unknown(String),
@@ -130,6 +135,9 @@ pub(crate) enum WriterFeature {
     ClusteredTable,
     /// This feature enables support for the variant data type, which stores semi-structured data.
     VariantType,
+    #[strum(serialize = "variantType-preview")]
+    #[serde(rename = "variantType-preview")]
+    VariantTypePreview,
     #[serde(untagged)]
     #[strum(default)]
     Unknown(String),
@@ -170,6 +178,11 @@ pub(crate) static SUPPORTED_READER_FEATURES: LazyLock<Vec<ReaderFeature>> = Lazy
         ReaderFeature::TypeWideningPreview,
         ReaderFeature::VacuumProtocolCheck,
         ReaderFeature::V2Checkpoint,
+        // Note: Read support for variant has not actually been implemented yet and reading tables
+        // containing the variant feature should be manually blocked because Delta Kernel does not
+        // support only looking at the write features during writes.
+        ReaderFeature::VariantType,
+        ReaderFeature::VariantTypePreview,
     ]
 });
 
@@ -182,6 +195,8 @@ pub(crate) static SUPPORTED_WRITER_FEATURES: LazyLock<Vec<WriterFeature>> = Lazy
         WriterFeature::DeletionVectors,
         WriterFeature::Invariants,
         WriterFeature::TimestampWithoutTimezone,
+        WriterFeature::VariantType,
+        WriterFeature::VariantTypePreview,
     ]
 });
 
@@ -234,6 +249,7 @@ mod tests {
             (ReaderFeature::V2Checkpoint, "v2Checkpoint"),
             (ReaderFeature::VacuumProtocolCheck, "vacuumProtocolCheck"),
             (ReaderFeature::VariantType, "variantType"),
+            (ReaderFeature::VariantTypePreview, "variantType-preview"),
             (ReaderFeature::unknown("something"), "something"),
         ];
 
@@ -275,6 +291,7 @@ mod tests {
             (WriterFeature::VacuumProtocolCheck, "vacuumProtocolCheck"),
             (WriterFeature::ClusteredTable, "clustering"),
             (WriterFeature::VariantType, "variantType"),
+            (WriterFeature::VariantTypePreview, "variantType-preview"),
             (WriterFeature::unknown("something"), "something"),
         ];
 
