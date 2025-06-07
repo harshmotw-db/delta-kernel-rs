@@ -118,8 +118,8 @@ impl TryFromKernel<&MapType> for ArrowField {
 }
 
 pub(crate) fn variant_arrow_type() -> ArrowDataType {
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, false);
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, false);
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
     let fields = vec![value_field, metadata_field];
     ArrowDataType::Struct(fields.into())
 }

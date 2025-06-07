@@ -288,8 +288,8 @@ fn get_indices(
                 ArrowDataType::Struct(fields) => {
                     let requested_dt = if requested_field.data_type == DataType::VARIANT {
                         DataType::struct_type([
-                            StructField::not_null("value", DataType::BINARY),
-                            StructField::not_null("metadata", DataType::BINARY),
+                            StructField::nullable("value", DataType::BINARY),
+                            StructField::nullable("metadata", DataType::BINARY),
                         ])
                     } else {
                         requested_field.data_type.clone()

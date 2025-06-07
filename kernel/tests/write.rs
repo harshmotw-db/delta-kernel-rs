@@ -5,6 +5,7 @@ use delta_kernel::arrow::array::{
     Int32Array, MapBuilder, MapFieldNames, StringArray, StringBuilder, TimestampMicrosecondArray,
 };
 use delta_kernel::arrow::array::{ArrayRef, BinaryArray, StructArray};
+use delta_kernel::arrow::buffer::NullBuffer;
 use delta_kernel::arrow::datatypes::{DataType as ArrowDataType, Field, Schema as ArrowSchema};
 use delta_kernel::arrow::error::ArrowError;
 use delta_kernel::arrow::record_batch::RecordBatch;
@@ -974,23 +975,25 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .new_transaction(&engine)?
         .with_commit_info(commit_info);
     
-    // First value corresponds to the variant value "1". Second value corresponds to the variant
-    // representing the JSON Object {"a":2}
-    let value = vec![Some(&[0x0C, 0x01][..]), Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
-    let metadata = vec![Some(&[0x01, 0x00, 0x00][..]), Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
+    // First value corresponds to the variant value "1". Third value corresponds to the variant
+    // representing the JSON Object {"a":2}.
+    let value = vec![Some(&[0x0C, 0x01][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
+    let metadata = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
 
     let value_array = Arc::new(BinaryArray::from(value)) as ArrayRef;
     let metadata_array = Arc::new(BinaryArray::from(metadata)) as ArrayRef;
 
     let fields = vec![
-        Field::new("value", ArrowDataType::Binary, false),
-        Field::new("metadata", ArrowDataType::Binary, false),
+        Field::new("value", ArrowDataType::Binary, true),
+        Field::new("metadata", ArrowDataType::Binary, true),
     ];
+
+    let null_bitmap = NullBuffer::from_iter([true, false, true]);
 
     let variant_array = StructArray::try_new(
         fields.into(),
         vec![value_array, metadata_array],
-        None,
+        Some(null_bitmap),
     ).unwrap();
 
     let data = RecordBatch::try_new(
