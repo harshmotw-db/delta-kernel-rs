@@ -702,6 +702,19 @@ impl Scan {
             });
         }
 
+        // Redundant check to make sure that the logical schema does not contain any references to
+        // VARIANT. The original check is in ScanBuilder.build().
+        let mut uses_variant = UsesVariant(false);
+        uses_variant.transform_struct(&*self.logical_schema);
+        require!(
+            !uses_variant.0,
+            Error::unsupported(
+                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
+                "specific about the scanned format of VARIANT columns (for example, " +
+                "STRUCT<value: BINARY, metadata: BINARY>)."
+            )
+        );
+
         debug!(
             "Executing scan with logical schema {:#?} and physical schema {:#?}",
             self.logical_schema, self.physical_schema
