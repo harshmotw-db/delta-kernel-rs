@@ -286,15 +286,7 @@ fn get_indices(
         if let Some((index, _, requested_field)) = field_info {
             match field.data_type() {
                 ArrowDataType::Struct(fields) => {
-                    let requested_dt = if requested_field.data_type == DataType::VARIANT {
-                        DataType::struct_type([
-                            StructField::nullable("value", DataType::BINARY),
-                            StructField::nullable("metadata", DataType::BINARY),
-                        ])
-                    } else {
-                        requested_field.data_type.clone()
-                    };
-                    if let DataType::Struct(ref requested_schema) = requested_dt {
+                    if let DataType::Struct(ref requested_schema) = requested_field.data_type {
                         let (parquet_advance, children) = get_indices(
                             parquet_index + parquet_offset,
                             requested_schema.as_ref(),

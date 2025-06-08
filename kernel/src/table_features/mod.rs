@@ -12,7 +12,7 @@ pub use column_mapping::{validate_schema_column_mapping, ColumnMappingMode};
 pub(crate) use timestamp_ntz::validate_timestamp_ntz_feature_support;
 mod column_mapping;
 mod timestamp_ntz;
-pub(crate) use variant_type::validate_variant_type_feature_support;
+pub(crate) use variant_type::{UsesVariant, validate_variant_type_feature_support};
 mod variant_type;
 
 /// Reader features communicate capabilities that must be implemented in order to correctly read a

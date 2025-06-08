@@ -32,7 +32,7 @@ pub(crate) fn validate_variant_type_feature_support(
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
-struct UsesVariant(bool);
+pub struct UsesVariant(pub bool);
 
 impl<'a> SchemaTransform<'a> for UsesVariant {
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {

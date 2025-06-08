@@ -28,7 +28,9 @@ use crate::schema::{
 };
 use crate::snapshot::Snapshot;
 use crate::table_features::ColumnMappingMode;
+use crate::table_features::UsesVariant;
 use crate::{DeltaResult, Engine, EngineData, Error, FileMeta, Version};
+use crate::utils::require;
 
 use self::log_replay::scan_action_iter;
 
@@ -108,6 +110,19 @@ impl ScanBuilder {
     pub fn build(self) -> DeltaResult<Scan> {
         // if no schema is provided, use snapshot's entire schema (e.g. SELECT *)
         let logical_schema = self.schema.unwrap_or_else(|| self.snapshot.schema());
+        // Ensure logical schema does not contain Variant. If entire Variant data is to be scanned
+        // as Struct<value: Binary, metadata: Binary>, the logical schema must contain the struct
+        // representation instead. This is to ensure extensibility to shredding.
+        let mut uses_variant = UsesVariant(false);
+        uses_variant.transform_struct(&*logical_schema);
+        require!(
+            !uses_variant.0,
+            Error::unsupported(
+                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
+                "specific about the scanned format of VARIANT columns (for example, " +
+                "STRUCT<value: BINARY, metadata: BINARY>)."
+            )
+        );
         let state_info = get_state_info(
             logical_schema.as_ref(),
             &self.snapshot.metadata().partition_columns,

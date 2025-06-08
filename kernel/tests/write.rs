@@ -518,6 +518,7 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
             )?),
             &table,
             engine,
+            None,
         )?;
     }
     Ok(())
@@ -663,6 +664,7 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
             )?),
             &table,
             engine,
+            None,
         )?;
     }
     Ok(())
@@ -941,7 +943,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     assert!(parsed_commits[1].get("add").is_some());
 
     // Verify the data can be read back correctly
-    test_read(&ArrowEngineData::new(data), &table, engine)?;
+    test_read(&ArrowEngineData::new(data), &table, engine, None)?;
 
     Ok(())
 }
@@ -1000,9 +1002,11 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(schema.as_ref().try_into_arrow()?),
         vec![Arc::new(variant_array)],
     ).unwrap();
+    let data2 = data.clone();
 
     // Write data
     let engine = Arc::new(engine);
+    let engine2 = engine.clone();
     let write_context = Arc::new(txn.get_write_context());
 
     let write_metadata = engine
@@ -1036,8 +1040,22 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
 
-    // Verify the data can be read back correctly
-    test_read(&ArrowEngineData::new(data), &table, engine)?;
+    // Verify that `VARIANT` cannot be provided as read schema.
+    let invalid_read = test_read(&ArrowEngineData::new(data), &table, engine, None);
+    assert!(invalid_read.is_err());
+    assert!(invalid_read.unwrap_err()
+        .to_string().contains("The logical schema must not contain `VARIANT`."));
+
+    // Verify that Data is read correctly if the schema provided is Struct of two binaries
+    let scan_schema = Arc::new(StructType::new(vec![StructField::nullable(
+        "v",
+        DataType::struct_type([
+            StructField::nullable("value", DataType::BINARY),
+            StructField::nullable("metadata", DataType::BINARY),
+        ]),
+    )]));
+
+    test_read(&ArrowEngineData::new(data2), &table, engine2, Some(scan_schema))?;
 
     Ok(())
 }
