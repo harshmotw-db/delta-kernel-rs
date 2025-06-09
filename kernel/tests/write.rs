@@ -953,7 +953,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     // setup tracing
     let _ = tracing_subscriber::fmt::try_init();
 
-    // create a table with TIMESTAMP_NTZ column
+    // create a table with VARIANT column
     let schema = Arc::new(StructType::new(vec![StructField::nullable(
         "v",
         DataType::VARIANT,
