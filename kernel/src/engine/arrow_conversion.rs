@@ -13,6 +13,7 @@ use crate::error::Error;
 use crate::schema::{
     ArrayType, DataType, MapType, MetadataValue, PrimitiveType, StructField, StructType,
 };
+use crate::schema::variant_utils::variant_arrow_type;
 
 pub(crate) const LIST_ARRAY_ROOT: &str = "element";
 pub(crate) const MAP_ROOT_DEFAULT: &str = "key_value";
@@ -115,13 +116,6 @@ impl TryFromKernel<&MapType> for ArrowField {
             false, // always non-null
         ))
     }
-}
-
-pub(crate) fn variant_arrow_type() -> ArrowDataType {
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
-    let fields = vec![value_field, metadata_field];
-    ArrowDataType::Struct(fields.into())
 }
 
 impl TryFromKernel<&DataType> for ArrowDataType {

@@ -17,6 +17,7 @@ use delta_kernel_derive::internal_api;
 
 pub(crate) mod compare;
 pub(crate) mod derive_macro_utils;
+pub mod variant_utils;
 
 pub type Schema = StructType;
 pub type SchemaRef = Arc<StructType>;
@@ -251,6 +252,9 @@ pub struct StructType {
     // while also allowing for fast lookup by name. The alternative is to do a linear search
     // for each field by name would be potentially quite expensive for large schemas.
     pub fields: IndexMap<String, StructField>,
+    // Additional metadata for the struct. For example, Structs representing Variants in the
+    // physical read schema must include the "__VARIANT__" tag.
+    pub metadata: Option<String>,
 }
 
 impl StructType {
@@ -258,7 +262,13 @@ impl StructType {
         Self {
             type_name: "struct".into(),
             fields: fields.into_iter().map(|f| (f.name.clone(), f)).collect(),
+            metadata: None,
         }
+    }
+
+    pub fn with_metadata(mut self, metadata: String) -> Self {
+        self.metadata = Some(metadata);
+        self
     }
 
     pub fn try_new<E>(fields: impl IntoIterator<Item = Result<StructField, E>>) -> Result<Self, E> {
@@ -379,6 +389,7 @@ struct StructTypeSerDeHelper {
     #[serde(rename = "type")]
     type_name: String,
     fields: Vec<StructField>,
+    metadata: Option<String>,
 }
 
 impl Serialize for StructType {
@@ -389,6 +400,7 @@ impl Serialize for StructType {
         StructTypeSerDeHelper {
             type_name: self.type_name.clone(),
             fields: self.fields.values().cloned().collect(),
+            metadata: self.metadata.clone(),
         }
         .serialize(serializer)
     }
@@ -408,6 +420,7 @@ impl<'de> Deserialize<'de> for StructType {
                 .into_iter()
                 .map(|f| (f.name.clone(), f))
                 .collect(),
+            metadata: helper.metadata
         })
     }
 }
@@ -711,6 +724,10 @@ impl DataType {
 
     pub fn struct_type(fields: impl IntoIterator<Item = StructField>) -> Self {
         StructType::new(fields).into()
+    }
+    pub fn struct_type_with_metadata(
+        fields: impl IntoIterator<Item = StructField>, metadata: String) -> Self {
+        StructType::new(fields).with_metadata(metadata).into()
     }
     pub fn try_struct_type<E>(
         fields: impl IntoIterator<Item = Result<StructField, E>>,

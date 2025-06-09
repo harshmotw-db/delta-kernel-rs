@@ -24,6 +24,7 @@ use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
 use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType};
+use delta_kernel::schema::variant_utils::{variant_struct_schema, VARIANT_METADATA};
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
 
@@ -985,9 +986,12 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let value_array = Arc::new(BinaryArray::from(value)) as ArrayRef;
     let metadata_array = Arc::new(BinaryArray::from(metadata)) as ArrayRef;
 
+    let mut tag = HashMap::new();
+    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
     let fields = vec![
         Field::new("value", ArrowDataType::Binary, true),
-        Field::new("metadata", ArrowDataType::Binary, true),
+        Field::new("metadata", ArrowDataType::Binary, true)
+            .with_metadata(tag),
     ];
 
     let null_bitmap = NullBuffer::from_iter([true, false, true]);
@@ -1049,10 +1053,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     // Verify that Data is read correctly if the schema provided is Struct of two binaries
     let scan_schema = Arc::new(StructType::new(vec![StructField::nullable(
         "v",
-        DataType::struct_type([
-            StructField::nullable("value", DataType::BINARY),
-            StructField::nullable("metadata", DataType::BINARY),
-        ]),
+        variant_struct_schema(),
     )]));
 
     test_read(&ArrowEngineData::new(data2), &table, engine2, Some(scan_schema))?;

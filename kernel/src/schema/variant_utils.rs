@@ -1,12 +1,36 @@
-//! Validation for variantType and variantType-preview feature support
+//! Utility functions for the variant type and variant-related table features.
 
-use super::{ReaderFeature, WriterFeature};
+use crate::table_features::{ReaderFeature, WriterFeature};
 use crate::actions::Protocol;
-use crate::schema::{PrimitiveType, Schema, SchemaTransform};
-use crate::utils::require;
 use crate::{DeltaResult, Error};
-
+use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
+use crate::utils::require;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use delta_kernel_derive::internal_api;
+
+pub const VARIANT_METADATA: &str = "__VARIANT__";
+
+/// The variant type for arrow is a struct where where the `metadata` field is tagged with some
+/// additional metadata saying `__VARIANT__ = true`.
+pub fn variant_arrow_type() -> ArrowDataType {
+    let mut tag = HashMap::new();
+    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
+
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
+        .with_metadata(tag);
+    let fields = vec![value_field, metadata_field];
+    ArrowDataType::Struct(fields.into())
+}
+
+pub fn variant_struct_schema() -> DataType {
+    DataType::struct_type_with_metadata([
+        StructField::nullable("value", DataType::BINARY),
+        StructField::nullable("metadata", DataType::BINARY),
+    ], VARIANT_METADATA.to_string())
+}
 
 pub(crate) fn validate_variant_type_feature_support(
     schema: &Schema,
@@ -32,7 +56,7 @@ pub(crate) fn validate_variant_type_feature_support(
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
-pub struct UsesVariant(pub bool);
+pub(crate) struct UsesVariant(pub bool);
 
 impl<'a> SchemaTransform<'a> for UsesVariant {
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
@@ -41,6 +65,16 @@ impl<'a> SchemaTransform<'a> for UsesVariant {
         }
         None
     }
+}
+
+/// Variant arrow type without metadata tag for testing purposes
+#[allow(dead_code)]
+#[internal_api]
+pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
+    let fields = vec![value_field, metadata_field];
+    ArrowDataType::Struct(fields.into())
 }
 
 #[cfg(test)]
@@ -153,6 +187,28 @@ mod tests {
                 result.is_err(),
                 "Should fail for nested VARIANT columns when features are missing"
             );
+
+            // Schema with VARIANT + Protocol without writer feature = ERROR
+            let result = validate_variant_type_feature_support(
+                &schema_with_variant,
+                &protocol_without_writer_feature,
+            );
+            assert!(
+                result.is_err(),
+                "Should fail when VARIANT columns are present but writer feature is missing"
+            );
+            assert!(result.unwrap_err().to_string().contains("variantType"));
+
+            // Schema with VARIANT + Protocol without reader feature = ERROR
+            let result = validate_variant_type_feature_support(
+                &schema_with_variant,
+                &protocol_without_reader_feature,
+            );
+            assert!(
+                result.is_err(),
+                "Should fail when VARIANT columns are present but reader feature is missing"
+            );
+            assert!(result.unwrap_err().to_string().contains("variantType"));
         });
     }
 }

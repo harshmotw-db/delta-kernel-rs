@@ -14,9 +14,10 @@ use url::Url;
 
 use crate::actions::{ensure_supported_features, Metadata, Protocol};
 use crate::schema::{InvariantChecker, SchemaRef};
+use crate::schema::variant_utils::validate_variant_type_feature_support;
 use crate::table_features::{
     column_mapping_mode, validate_schema_column_mapping, validate_timestamp_ntz_feature_support,
-    validate_variant_type_feature_support, ColumnMappingMode, ReaderFeature, WriterFeature,
+    ColumnMappingMode, ReaderFeature, WriterFeature,
 };
 use crate::table_properties::TableProperties;
 use crate::{DeltaResult, Error, Version};

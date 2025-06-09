@@ -14,6 +14,7 @@ use crate::{
     schema::{DataType, MetadataValue, StructField},
     utils::require,
     DeltaResult, Error,
+
 };
 
 /// Ensure a kernel data type matches an arrow data type. This only ensures that the actual "type"
@@ -264,6 +265,7 @@ mod tests {
 
     use crate::engine::arrow_conversion::TryFromKernel as _;
     use crate::schema::{ArrayType, DataType, MapType, StructField};
+    use crate::schema::variant_utils::{variant_arrow_type, variant_arrow_type_without_tag};
 
     use super::*;
 
@@ -322,6 +324,22 @@ mod tests {
         assert!(!can_upcast_to_decimal(&Int32, 10u8, 1i8));
         assert!(!can_upcast_to_decimal(&Int64, 19u8, 0i8));
         assert!(!can_upcast_to_decimal(&Int64, 20u8, 1i8));
+    }
+
+    #[test]
+    fn ensure_variants() {
+        assert!(ensure_data_types(
+            &DataType::VARIANT,
+            &variant_arrow_type(),
+            true
+        )
+        .is_ok());
+        assert!(ensure_data_types(
+            &DataType::decimal_unchecked(5, 2),
+            &variant_arrow_type_without_tag(),
+            true
+        )
+        .is_err());
     }
 
     #[test]

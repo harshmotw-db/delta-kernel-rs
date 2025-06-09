@@ -26,9 +26,9 @@ use crate::schema::{
     ArrayType, DataType, MapType, PrimitiveType, Schema, SchemaRef, SchemaTransform, StructField,
     StructType,
 };
+use crate::schema::variant_utils::UsesVariant;
 use crate::snapshot::Snapshot;
 use crate::table_features::ColumnMappingMode;
-use crate::table_features::UsesVariant;
 use crate::{DeltaResult, Engine, EngineData, Error, FileMeta, Version};
 use crate::utils::require;
 
