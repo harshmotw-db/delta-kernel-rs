@@ -24,7 +24,7 @@ use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
 use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType};
-use delta_kernel::schema::variant_utils::{variant_struct_schema, VARIANT_METADATA};
+use delta_kernel::schema::variant_utils::{variant_arrow_type, variant_struct_schema};
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
 
@@ -986,18 +986,17 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let value_array = Arc::new(BinaryArray::from(value)) as ArrayRef;
     let metadata_array = Arc::new(BinaryArray::from(metadata)) as ArrayRef;
 
-    let mut tag = HashMap::new();
-    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
-    let fields = vec![
-        Field::new("value", ArrowDataType::Binary, true),
-        Field::new("metadata", ArrowDataType::Binary, true)
-            .with_metadata(tag),
-    ];
+    let variant_arrow = variant_arrow_type();
+
+    let fields = match variant_arrow {
+        ArrowDataType::Struct(fields) => Ok(fields),
+        _ => Err(KernelError::Generic("Variant arrow data type is not struct.".to_string()))
+    }.unwrap();
 
     let null_bitmap = NullBuffer::from_iter([true, false, true]);
 
     let variant_array = StructArray::try_new(
-        fields.into(),
+        fields,
         vec![value_array, metadata_array],
         Some(null_bitmap),
     ).unwrap();

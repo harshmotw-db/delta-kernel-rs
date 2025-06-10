@@ -703,6 +703,9 @@ impl Scan {
         &self,
         engine: Arc<dyn Engine>,
     ) -> DeltaResult<impl Iterator<Item = DeltaResult<ScanResult>> + use<'_>> {
+        // Redundant check to make sure we never scan an invalid logical schema.
+        Self::validate_logical_schema(&self.logical_schema)?;
+
         struct ScanFile {
             path: String,
             size: i64,

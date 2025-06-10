@@ -14,7 +14,6 @@ use crate::{
     schema::{DataType, MetadataValue, StructField},
     utils::require,
     DeltaResult, Error,
-
 };
 
 /// Ensure a kernel data type matches an arrow data type. This only ensures that the actual "type"
