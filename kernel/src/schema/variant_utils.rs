@@ -67,6 +67,23 @@ impl<'a> SchemaTransform<'a> for UsesVariant {
     }
 }
 
+/// Utility to make it easier for third-party engines to replace nested Variants with
+/// `STRUCT<value: BINARY, metadata: BINARY>` to it is easier for
+#[allow(dead_code)]
+pub(crate) struct ReplaceVariantWithStructRepresentation();
+impl<'a> SchemaTransform<'a> for ReplaceVariantWithStructRepresentation {
+    fn should_transform_primitive_to_data_type(&self) -> bool { true }
+
+    fn transform_primitive_to_data_type(&mut self,
+        ptype: &'a PrimitiveType) -> Option<Cow<'a, DataType>> {
+        if *ptype == PrimitiveType::Variant {
+            Some(Cow::Owned(variant_struct_schema()))
+        } else {
+            Some(Cow::Owned(DataType::Primitive(ptype.clone())))
+        }
+    }
+}
+
 /// Variant arrow type without metadata tag for testing purposes
 #[allow(dead_code)]
 #[internal_api]
@@ -79,10 +96,68 @@ pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
 
 #[cfg(test)]
 mod tests {
+    use tracing_subscriber::registry::Data;
+
     use super::*;
     use crate::actions::Protocol;
-    use crate::schema::{DataType, PrimitiveType, StructField, StructType};
+    use crate::schema::{ArrayType, DataType, MapType, PrimitiveType, StructField, StructType};
     use crate::table_features::{ReaderFeature, WriterFeature};
+
+    #[test]
+    fn test_variant_schema_replace_top_level() {
+        let dt = DataType::VARIANT;
+        let mut replace_variant =
+            ReplaceVariantWithStructRepresentation();
+        let transformed = replace_variant.transform(&dt);
+        assert_eq!(transformed.unwrap().into_owned(), variant_struct_schema());
+    }
+
+    #[test]
+    fn test_variant_schema_replace_array() {
+        let dt: DataType = ArrayType::new(DataType::VARIANT, false).into();
+        let mut replace_variant =
+            ReplaceVariantWithStructRepresentation();
+        let transformed = replace_variant.transform(&dt);
+        let expected: DataType = ArrayType::new(variant_struct_schema(), false).into();
+        assert_eq!(transformed.unwrap().into_owned(), expected);
+    }
+
+    #[test]
+    fn test_variant_schema_replace_struct() {
+        let dt: DataType = DataType::struct_type([
+            StructField::nullable("i", DataType::INTEGER),
+            StructField::nullable("v", DataType::VARIANT),
+            StructField::nullable("s", DataType::struct_type([
+                StructField::nullable("v1", DataType::VARIANT),
+                StructField::nullable("i1", DataType::STRING),
+            ])),
+            StructField::nullable("not_variant", variant_struct_schema()),
+        ]).into();
+        // let dt: DataType = ArrayType::new(DataType::VARIANT, false).into();
+        let mut replace_variant =
+            ReplaceVariantWithStructRepresentation();
+        let transformed = replace_variant.transform(&dt);
+        let expected: DataType = DataType::struct_type([
+            StructField::nullable("i", DataType::INTEGER),
+            StructField::nullable("v", variant_struct_schema()),
+            StructField::nullable("s", DataType::struct_type([
+                StructField::nullable("v1", variant_struct_schema()),
+                StructField::nullable("i1", DataType::STRING),
+            ])),
+            StructField::nullable("not_variant", variant_struct_schema()),
+        ]).into();
+        assert_eq!(transformed.unwrap().into_owned(), expected);
+    }
+
+    #[test]
+    fn test_variant_schema_replace_map() {
+        let dt: DataType = MapType::new(DataType::STRING, DataType::VARIANT, false).into();
+        let mut replace_variant =
+            ReplaceVariantWithStructRepresentation();
+        let transformed = replace_variant.transform(&dt);
+        let expected: DataType = MapType::new(DataType::STRING, variant_struct_schema(), false).into();
+        assert_eq!(transformed.unwrap().into_owned(), expected);
+    }
 
     #[test]
     fn test_variant_feature_validation() {

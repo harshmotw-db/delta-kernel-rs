@@ -271,6 +271,13 @@ impl StructType {
         self
     }
 
+    pub fn with_metadata_opt(self, metadata: Option<String>) -> Self {
+        match metadata {
+            Some(m) => self.with_metadata(m),
+            None => self,
+        }
+    }
+
     pub fn try_new<E>(fields: impl IntoIterator<Item = Result<StructField, E>>) -> Result<Self, E> {
         let fields: Vec<_> = fields.into_iter().try_collect()?;
         Ok(Self::new(fields))
@@ -780,9 +787,19 @@ impl Display for DataType {
 /// child schema elements of each schema element. Implementations can call these as needed but will
 /// generally not need to override them.
 pub trait SchemaTransform<'a> {
+    /// Decides whether to transform primitives using `transform_primitive` or
+    /// `transform_primitive_to_data_type`.
+    fn should_transform_primitive_to_data_type(&self) -> bool { false }
+
     /// Called for each primitive encountered during the schema traversal.
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
         Some(Cow::Borrowed(ptype))
+    }
+
+    /// Called for each primitive encountered during the schema traversal. Allows for primitive type
+    /// to be transformed to non-primitive data type.
+    fn transform_primitive_to_data_type(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, DataType>> {
+        Some(Cow::Owned(DataType::Primitive(ptype.clone())))
     }
 
     /// Called for each struct encountered during the schema traversal. Implementations can call
@@ -846,7 +863,13 @@ pub trait SchemaTransform<'a> {
             };
         }
         match data_type {
-            Primitive(ptype) => apply_transform!(transform_primitive, ptype),
+            Primitive(ptype) => {
+                if self.should_transform_primitive_to_data_type() {
+                    apply_transform!(transform_primitive_to_data_type, ptype)
+                } else {
+                    apply_transform!(transform_primitive, ptype)
+                }
+            }
             Array(atype) => apply_transform!(transform_array, atype),
             Struct(stype) => apply_transform!(transform_struct, stype),
             Map(mtype) => apply_transform!(transform_map, mtype),
@@ -893,7 +916,7 @@ pub trait SchemaTransform<'a> {
             // At least one field was changed or filtered out, so make a new struct
             Some(Owned(StructType::new(
                 fields.into_iter().map(|f| f.into_owned()),
-            )))
+            ).with_metadata_opt(stype.metadata.clone())))
         } else {
             Some(Borrowed(stype))
         }
