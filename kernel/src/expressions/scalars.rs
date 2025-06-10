@@ -624,6 +624,7 @@ impl PrimitiveType {
                     _ => unreachable!(),
                 }
             }
+            // Scalars Variant is not supported yet.
             Variant => Err(self.parse_error(raw))
         }
     }

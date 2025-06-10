@@ -40,7 +40,7 @@ pub(crate) fn validate_variant_type_feature_support(
         (!protocol.has_writer_feature(&WriterFeature::VariantType)
         && !protocol.has_writer_feature(&WriterFeature::VariantTypePreview))
     {
-        let mut uses_variant = UsesVariant(false);
+        let mut uses_variant = UsesVariant::default();
         let _ = uses_variant.transform_struct(schema);
         require!(
             !uses_variant.0,
@@ -53,7 +53,8 @@ pub(crate) fn validate_variant_type_feature_support(
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
-pub(crate) struct UsesVariant(pub bool);
+#[derive(Debug, Default)]
+pub(crate) struct UsesVariant(pub(crate) bool);
 
 impl<'a> SchemaTransform<'a> for UsesVariant {
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {

@@ -176,9 +176,6 @@ pub(crate) static SUPPORTED_READER_FEATURES: LazyLock<Vec<ReaderFeature>> = Lazy
         ReaderFeature::TypeWideningPreview,
         ReaderFeature::VacuumProtocolCheck,
         ReaderFeature::V2Checkpoint,
-        // Note: Read support for variant has not actually been implemented yet and reading tables
-        // containing the variant feature should be manually blocked because Delta Kernel does not
-        // support only looking at the write features during writes.
         ReaderFeature::VariantType,
         ReaderFeature::VariantTypePreview,
     ]

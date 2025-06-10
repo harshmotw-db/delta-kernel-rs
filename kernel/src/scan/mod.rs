@@ -423,7 +423,7 @@ impl Scan {
         // Ensure logical schema does not contain Variant. If entire Variant data is to be scanned
         // as Struct<value: Binary, metadata: Binary>, the logical schema must contain the struct
         // representation instead. This is to ensure extensibility to shredding.
-        let mut uses_variant = UsesVariant(false);
+        let mut uses_variant = UsesVariant::default();
         uses_variant.transform_struct(&*logical_schema);
         require!(
             !uses_variant.0,
