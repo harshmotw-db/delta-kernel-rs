@@ -4,6 +4,7 @@ use crate::table_features::{ReaderFeature, WriterFeature};
 use crate::actions::Protocol;
 use crate::{DeltaResult, Error};
 use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+use crate::engine::arrow_conversion::TryFromKernel;
 use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
 use crate::utils::require;
 use std::borrow::Cow;
@@ -15,21 +16,18 @@ pub const VARIANT_METADATA: &str = "__VARIANT__";
 /// The variant type for arrow is a struct where where the `metadata` field is tagged with some
 /// additional metadata saying `__VARIANT__ = true`.
 pub fn variant_arrow_type() -> ArrowDataType {
-    let mut tag = HashMap::new();
-    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
-
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
-        .with_metadata(tag);
-    let fields = vec![value_field, metadata_field];
-    ArrowDataType::Struct(fields.into())
+    TryFromKernel::try_from_kernel(&variant_struct_schema()).unwrap()
 }
 
+/// Variant is represented as a `STRUCT<value: BINARY, metadata: BINARY>` where the metadata field
+/// has some additional metadata saying `__VARIANT__ = true`. This makes it easier for the parquet
+/// reader to understand variant.
 pub fn variant_struct_schema() -> DataType {
-    DataType::struct_type_with_metadata([
+    DataType::struct_type([
         StructField::nullable("value", DataType::BINARY),
-        StructField::nullable("metadata", DataType::BINARY),
-    ], VARIANT_METADATA.to_string())
+        StructField::nullable("metadata", DataType::BINARY)
+            .with_metadata([(VARIANT_METADATA, "true")]),
+    ])
 }
 
 pub(crate) fn validate_variant_type_feature_support(
@@ -96,8 +94,6 @@ pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
 
 #[cfg(test)]
 mod tests {
-    use tracing_subscriber::registry::Data;
-
     use super::*;
     use crate::actions::Protocol;
     use crate::schema::{ArrayType, DataType, MapType, PrimitiveType, StructField, StructType};
