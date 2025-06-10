@@ -8,7 +8,6 @@ use crate::engine::arrow_conversion::TryFromKernel;
 use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
 use crate::utils::require;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use delta_kernel_derive::internal_api;
 
 pub const VARIANT_METADATA: &str = "__VARIANT__";

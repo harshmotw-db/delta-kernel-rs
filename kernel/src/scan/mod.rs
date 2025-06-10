@@ -110,19 +110,6 @@ impl ScanBuilder {
     pub fn build(self) -> DeltaResult<Scan> {
         // if no schema is provided, use snapshot's entire schema (e.g. SELECT *)
         let logical_schema = self.schema.unwrap_or_else(|| self.snapshot.schema());
-        // Ensure logical schema does not contain Variant. If entire Variant data is to be scanned
-        // as Struct<value: Binary, metadata: Binary>, the logical schema must contain the struct
-        // representation instead. This is to ensure extensibility to shredding.
-        let mut uses_variant = UsesVariant(false);
-        uses_variant.transform_struct(&*logical_schema);
-        require!(
-            !uses_variant.0,
-            Error::unsupported(
-                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
-                "specific about the scanned format of VARIANT columns (for example, " +
-                "STRUCT<value: BINARY, metadata: BINARY>)."
-            )
-        );
         let state_info = get_state_info(
             logical_schema.as_ref(),
             &self.snapshot.metadata().partition_columns,
@@ -133,19 +120,19 @@ impl ScanBuilder {
             None => PhysicalPredicate::None,
         };
 
-        Ok(Scan {
-            snapshot: self.snapshot,
+        Scan::new(
+            self.snapshot,
             logical_schema,
-            physical_schema: Arc::new(StructType::new(state_info.read_fields)),
+            Arc::new(StructType::new(state_info.read_fields)),
             physical_predicate,
-            all_fields: Arc::new(state_info.all_fields),
-            have_partition_cols: state_info.have_partition_cols,
-        })
+            Arc::new(state_info.all_fields),
+            state_info.have_partition_cols,
+        )
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum PhysicalPredicate {
+pub enum PhysicalPredicate {
     Some(PredicateRef, SchemaRef),
     StaticSkipAll,
     None,
@@ -412,6 +399,43 @@ impl std::fmt::Debug for Scan {
 }
 
 impl Scan {
+    pub fn new(
+        snapshot: Arc<Snapshot>,
+        logical_schema: SchemaRef,
+        physical_schema: SchemaRef,
+        physical_predicate: PhysicalPredicate,
+        all_fields: Arc<Vec<ColumnType>>,
+        have_partition_cols: bool
+    ) -> DeltaResult<Self> {
+        Self::validate_logical_schema(&logical_schema)?;
+
+        Ok(Self {
+            snapshot: snapshot,
+            logical_schema: logical_schema,
+            physical_schema: physical_schema,
+            physical_predicate: physical_predicate,
+            all_fields: all_fields,
+            have_partition_cols: have_partition_cols
+        })
+    }
+
+    fn validate_logical_schema(logical_schema: &SchemaRef) -> DeltaResult<()> {
+        // Ensure logical schema does not contain Variant. If entire Variant data is to be scanned
+        // as Struct<value: Binary, metadata: Binary>, the logical schema must contain the struct
+        // representation instead. This is to ensure extensibility to shredding.
+        let mut uses_variant = UsesVariant(false);
+        uses_variant.transform_struct(&*logical_schema);
+        require!(
+            !uses_variant.0,
+            Error::unsupported(
+                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
+                "specific about the scanned format of VARIANT columns (for example, " +
+                "STRUCT<value: BINARY, metadata: BINARY>)."
+            )
+        );
+        Ok(())
+    }
+
     /// The table's root URL. Any relative paths returned from `scan_data` (or in a callback from
     /// [`ScanMetadata::visit_scan_files`]) must be resolved against this root to get the actual path to
     /// the file.
@@ -701,19 +725,6 @@ impl Scan {
                 transform,
             });
         }
-
-        // Redundant check to make sure that the logical schema does not contain any references to
-        // VARIANT. The original check is in ScanBuilder.build().
-        let mut uses_variant = UsesVariant(false);
-        uses_variant.transform_struct(&*self.logical_schema);
-        require!(
-            !uses_variant.0,
-            Error::unsupported(
-                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
-                "specific about the scanned format of VARIANT columns (for example, " +
-                "STRUCT<value: BINARY, metadata: BINARY>)."
-            )
-        );
 
         debug!(
             "Executing scan with logical schema {:#?} and physical schema {:#?}",

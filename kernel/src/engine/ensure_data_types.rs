@@ -335,7 +335,7 @@ mod tests {
         )
         .is_ok());
         assert!(ensure_data_types(
-            &DataType::decimal_unchecked(5, 2),
+            &DataType::VARIANT,
             &variant_arrow_type_without_tag(),
             true
         )
