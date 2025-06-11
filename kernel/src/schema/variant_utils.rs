@@ -65,8 +65,9 @@ impl<'a> SchemaTransform<'a> for UsesVariant {
     }
 }
 
-/// Utility to make it easier for third-party engines to replace nested Variants with
-/// `STRUCT<value: BINARY, metadata: BINARY>` to it is easier for
+/// Utility to make it easier for third-party engines to replace nested Variants with TAGGED
+/// `STRUCT<value: BINARY, metadata: BINARY>` to it is easier for engines to construct variant read
+/// schemas.
 #[allow(dead_code)]
 pub struct ReplaceVariantWithStructRepresentation();
 

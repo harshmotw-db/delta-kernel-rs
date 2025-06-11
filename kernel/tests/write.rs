@@ -23,9 +23,11 @@ use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
-use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType, SchemaTransform};
+use delta_kernel::schema::{
+    DataType, SchemaRef, StructField, StructType, SchemaTransform
+};
 use delta_kernel::schema::variant_utils::{
-    variant_arrow_type, ReplaceVariantWithStructRepresentation
+    variant_arrow_type, ReplaceVariantWithStructRepresentation,
 };
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
@@ -1042,11 +1044,9 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             )?)
         ],
     ).unwrap();
-    let data2 = data.clone();
 
     // Write data
     let engine = Arc::new(engine);
-    let engine2 = engine.clone();
     let write_context = Arc::new(txn.get_write_context());
 
     let write_metadata = engine
@@ -1081,7 +1081,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     assert!(parsed_commits[1].get("add").is_some());
 
     // Verify that `VARIANT` cannot be provided as read schema.
-    let invalid_read = test_read(&ArrowEngineData::new(data), &table, engine, None);
+    let invalid_read = test_read(&ArrowEngineData::new(data.clone()), &table, engine.clone(), None);
     assert!(invalid_read.is_err());
     assert!(invalid_read.unwrap_err()
         .to_string().contains("The logical schema must not contain `VARIANT`."));
@@ -1096,7 +1096,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string()))
     }?;
 
-    test_read(&ArrowEngineData::new(data2), &table, engine2, Some(Arc::new(scan_struct)))?;
+    test_read(&ArrowEngineData::new(data.clone()), &table, engine.clone(), Some(Arc::new(scan_struct)))?;
 
     Ok(())
 }
