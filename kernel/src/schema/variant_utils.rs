@@ -68,7 +68,8 @@ impl<'a> SchemaTransform<'a> for UsesVariant {
 /// Utility to make it easier for third-party engines to replace nested Variants with
 /// `STRUCT<value: BINARY, metadata: BINARY>` to it is easier for
 #[allow(dead_code)]
-pub(crate) struct ReplaceVariantWithStructRepresentation();
+pub struct ReplaceVariantWithStructRepresentation();
+
 impl<'a> SchemaTransform<'a> for ReplaceVariantWithStructRepresentation {
     fn should_transform_primitive_to_data_type(&self) -> bool { true }
 

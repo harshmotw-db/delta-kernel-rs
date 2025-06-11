@@ -23,8 +23,10 @@ use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
-use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType};
-use delta_kernel::schema::variant_utils::{variant_arrow_type, variant_struct_schema};
+use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType, SchemaTransform};
+use delta_kernel::schema::variant_utils::{
+    variant_arrow_type, variant_struct_schema, ReplaceVariantWithStructRepresentation
+};
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
 
@@ -1050,12 +1052,16 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         .to_string().contains("The logical schema must not contain `VARIANT`."));
 
     // Verify that Data is read correctly if the schema provided is Struct of two binaries
-    let scan_schema = Arc::new(StructType::new(vec![StructField::nullable(
-        "v",
-        variant_struct_schema(),
-    )]));
+    let mut replace_variant = ReplaceVariantWithStructRepresentation();
+    let schema_dt: DataType = (*schema).clone().into();
+    let scan_schema = replace_variant.transform(&schema_dt)
+        .ok_or_else(|| KernelError::Generic("Schema is None!!!".to_string()))?;
+    let scan_struct = match &*scan_schema {
+        DataType::Struct(struc) => Ok((**struc).clone()),
+        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string()))
+    }?;
 
-    test_read(&ArrowEngineData::new(data2), &table, engine2, Some(scan_schema))?;
+    test_read(&ArrowEngineData::new(data2), &table, engine2, Some(Arc::new(scan_struct)))?;
 
     Ok(())
 }
