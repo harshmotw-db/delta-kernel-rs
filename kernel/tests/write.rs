@@ -1027,12 +1027,6 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         Some(null_bitmap),
     )?);
 
-    // let nested_struct_array = StructArray::try_new(
-    //     vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
-    //     vec![variant_nested_v_array],
-    //     None,
-    // )?;
-
     let data = RecordBatch::try_new(
         Arc::new(schema.as_ref().try_into_arrow()?),
         vec![
