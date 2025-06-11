@@ -25,7 +25,7 @@ use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
 use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType, SchemaTransform};
 use delta_kernel::schema::variant_utils::{
-    variant_arrow_type, variant_struct_schema, ReplaceVariantWithStructRepresentation
+    variant_arrow_type, ReplaceVariantWithStructRepresentation
 };
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
@@ -958,9 +958,17 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // create a table with VARIANT column
     let schema = Arc::new(StructType::new(vec![StructField::nullable(
-        "v",
-        DataType::VARIANT,
-    )]));
+            "v",
+            DataType::VARIANT,
+        ),
+        StructField::nullable("i", DataType::INTEGER),
+        StructField::nullable("nested", StructType::new(vec![
+            StructField::nullable(
+                "nested_v",
+                DataType::VARIANT,
+            ),
+        ])),
+    ]));
 
     let (store, engine, table_location) = setup("test_table_variant", true);
     let table = create_table(
@@ -982,30 +990,63 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
-    let value = vec![Some(&[0x0C, 0x01][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
-    let metadata = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
+    let value_v = vec![Some(&[0x0C, 0x01][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
+    let metadata_v = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
 
-    let value_array = Arc::new(BinaryArray::from(value)) as ArrayRef;
-    let metadata_array = Arc::new(BinaryArray::from(metadata)) as ArrayRef;
+    let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
+    let metadata_v_array = Arc::new(BinaryArray::from(metadata_v)) as ArrayRef;
+
+    // First value corresponds to the variant value "2". Third value corresponds to the variant
+    // representing the JSON Object {"b":3}.
+    let value_nested_v = vec![Some(&[0x0C, 0x02][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..])];
+    let metadata_nested_v = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x62][..])];
+
+    let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
+    let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
 
     let variant_arrow = variant_arrow_type();
+
+    let i_values = vec![31, 32, 33];
 
     let fields = match variant_arrow {
         ArrowDataType::Struct(fields) => Ok(fields),
         _ => Err(KernelError::Generic("Variant arrow data type is not struct.".to_string()))
-    }.unwrap();
+    }?;
 
     let null_bitmap = NullBuffer::from_iter([true, false, true]);
 
-    let variant_array = StructArray::try_new(
+    let variant_v_array = StructArray::try_new(
+        fields.clone(),
+        vec![value_v_array, metadata_v_array],
+        Some(null_bitmap.clone()),
+    )?;
+
+    let variant_nested_v_array = Arc::new(StructArray::try_new(
         fields,
-        vec![value_array, metadata_array],
+        vec![value_nested_v_array, metadata_nested_v_array],
         Some(null_bitmap),
-    ).unwrap();
+    )?);
+
+    // let nested_struct_array = StructArray::try_new(
+    //     vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
+    //     vec![variant_nested_v_array],
+    //     None,
+    // )?;
 
     let data = RecordBatch::try_new(
         Arc::new(schema.as_ref().try_into_arrow()?),
-        vec![Arc::new(variant_array)],
+        vec![
+            // v variant
+            Arc::new(variant_v_array),
+            // i int
+            Arc::new(Int32Array::from(i_values)),
+            // nested struct<nested_v variant>
+            Arc::new(StructArray::try_new(
+                vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
+                vec![variant_nested_v_array],
+                None,
+            )?)
+        ],
     ).unwrap();
     let data2 = data.clone();
 
