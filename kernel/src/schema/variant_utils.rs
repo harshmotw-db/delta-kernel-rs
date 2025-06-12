@@ -8,6 +8,7 @@ use crate::engine::arrow_conversion::TryFromKernel;
 use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
 use crate::utils::require;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use delta_kernel_derive::internal_api;
 
 pub const VARIANT_METADATA: &str = "__VARIANT__";
@@ -90,6 +91,21 @@ impl<'a> SchemaTransform<'a> for ReplaceVariantWithStructRepresentation {
 pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
     let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
     let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
+    let fields = vec![value_field, metadata_field];
+    ArrowDataType::Struct(fields.into())
+}
+
+// Only used for testing purposes. Here, the arrow variant type is constructed manually instead of
+// relying on the Kernel Struct -> ArrowStruct translation. This ensures that the metadata in
+// Variant's arrow representation is added correctly.
+#[allow(dead_code)]
+#[internal_api]
+pub(crate) fn hard_coded_variant_arrow_type() -> ArrowDataType {
+    let mut tag = HashMap::new();
+    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
+        .with_metadata(tag);
     let fields = vec![value_field, metadata_field];
     ArrowDataType::Struct(fields.into())
 }

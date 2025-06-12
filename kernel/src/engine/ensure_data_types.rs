@@ -264,7 +264,9 @@ mod tests {
 
     use crate::engine::arrow_conversion::TryFromKernel as _;
     use crate::schema::{ArrayType, DataType, MapType, StructField};
-    use crate::schema::variant_utils::{variant_arrow_type, variant_arrow_type_without_tag};
+    use crate::schema::variant_utils::{
+        variant_arrow_type, variant_arrow_type_without_tag, hard_coded_variant_arrow_type,
+    };
 
     use super::*;
 
@@ -330,6 +332,12 @@ mod tests {
         assert!(ensure_data_types(
             &DataType::VARIANT,
             &variant_arrow_type(),
+            true
+        )
+        .is_ok());
+        assert!(ensure_data_types(
+            &DataType::VARIANT,
+            &hard_coded_variant_arrow_type(),
             true
         )
         .is_ok());
