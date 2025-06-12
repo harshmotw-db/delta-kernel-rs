@@ -154,6 +154,16 @@ impl StructField {
         self
     }
 
+    pub fn with_metadata_extended(
+        mut self,
+        metadata: impl IntoIterator<Item = (impl Into<String>, impl Into<MetadataValue>)>,
+    ) -> Self {
+        self.metadata.extend(metadata
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into())));
+        self
+    }
+
     pub fn get_config_value(&self, key: &ColumnMetadataKey) -> Option<&MetadataValue> {
         self.metadata.get(key.as_ref())
     }

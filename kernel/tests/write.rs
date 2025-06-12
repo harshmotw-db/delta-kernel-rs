@@ -72,6 +72,7 @@ async fn create_table(
     use_37_protocol: bool,
     enable_timestamp_without_timezone: bool,
     enable_variant: bool,
+    enable_column_mapping: bool,
 ) -> Result<Table, Box<dyn std::error::Error>> {
     let table_id = "test_id";
     let schema = serde_json::to_string(&schema)?;
@@ -86,6 +87,9 @@ async fn create_table(
         if enable_variant {
             reader_features.push("variantType");
             writer_features.push("variantType");
+        }
+        if enable_column_mapping {
+            reader_features.push("columnMapping");
         }
         (reader_features, writer_features)
     };
@@ -116,7 +120,7 @@ async fn create_table(
             },
             "schemaString": schema,
             "partitionColumns": partition_columns,
-            "configuration": {},
+            "configuration": {"delta.columnMapping.mode": "name"},
             "createdTime": 1677811175819u64
         }
     });
@@ -200,6 +204,7 @@ async fn setup_tables(
                 true,
                 false,
                 false,
+                false,
             )
             .await?,
             engine_37,
@@ -212,6 +217,7 @@ async fn setup_tables(
                 table_location_11,
                 schema,
                 partition_columns,
+                false,
                 false,
                 false,
                 false,
@@ -887,6 +893,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
         true,
         true, // enable "timestamp without timezone" feature
         false,
+        false,
     )
     .await?;
 
@@ -959,14 +966,32 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt::try_init();
 
     // create a table with VARIANT column
-    let schema = Arc::new(StructType::new(vec![StructField::nullable(
+    let table_schema = Arc::new(StructType::new(vec![StructField::nullable(
             "v",
             DataType::VARIANT,
-        ),
-        StructField::nullable("i", DataType::INTEGER),
+        ).with_metadata([("delta.columnMapping.physicalName", "col1")])
+        .with_metadata_extended([("delta.columnMapping.id", 1)]),
+        StructField::nullable("i", DataType::INTEGER)
+            .with_metadata([("delta.columnMapping.physicalName", "col2")])
+            .with_metadata_extended([("delta.columnMapping.id", 2)]),
         StructField::nullable("nested", StructType::new(vec![
             StructField::nullable(
                 "nested_v",
+                DataType::VARIANT,
+            ).with_metadata([("delta.columnMapping.physicalName", "col21")])
+            .with_metadata_extended([("delta.columnMapping.id", 3)])
+        ])).with_metadata([("delta.columnMapping.physicalName", "col3")])
+        .with_metadata_extended([("delta.columnMapping.id", 4),])
+    ]));
+
+    let write_schema = Arc::new(StructType::new(vec![StructField::nullable(
+            "col1",
+            DataType::VARIANT,
+        ),
+        StructField::nullable("col2", DataType::INTEGER),
+        StructField::nullable("col3", StructType::new(vec![
+            StructField::nullable(
+                "col21",
                 DataType::VARIANT,
             ),
         ])),
@@ -976,11 +1001,12 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let table = create_table(
         store.clone(),
         table_location,
-        schema.clone(),
+        table_schema.clone(),
         &[],
         true,
         false,
         true, // enable "variantType" feature
+        true, // enable "columnMapping" feature
     )
     .await?;
 
@@ -1030,16 +1056,16 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     )?);
 
     let data = RecordBatch::try_new(
-        Arc::new(schema.as_ref().try_into_arrow()?),
+        Arc::new(write_schema.as_ref().try_into_arrow()?),
         vec![
             // v variant
-            Arc::new(variant_v_array),
+            Arc::new(variant_v_array.clone()),
             // i int
-            Arc::new(Int32Array::from(i_values)),
+            Arc::new(Int32Array::from(i_values.clone())),
             // nested struct<nested_v variant>
             Arc::new(StructArray::try_new(
-                vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
-                vec![variant_nested_v_array],
+                vec![Field::new("col21", variant_arrow_type(), true)].into(),
+                vec![variant_nested_v_array.clone()],
                 None,
             )?)
         ],
@@ -1047,7 +1073,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context());
+    let write_context = Arc::new(txn.get_write_context_with_schema(write_schema.clone()));
 
     let write_metadata = engine
         .write_parquet(
@@ -1088,15 +1114,45 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify that Data is read correctly if the schema provided is Struct of two binaries
     let mut replace_variant = ReplaceVariantWithStructRepresentation();
-    let schema_dt: DataType = (*schema).clone().into();
+    let schema_dt: DataType = (*table_schema).clone().into();
     let scan_schema = replace_variant.transform(&schema_dt)
         .ok_or_else(|| KernelError::Generic("Schema is None!!!".to_string()))?;
-    let scan_struct = match &*scan_schema {
+    // The logical read schema
+    let read_schema = match &*scan_schema {
         DataType::Struct(struc) => Ok((**struc).clone()),
         _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string()))
     }?;
 
-    test_read(&ArrowEngineData::new(data.clone()), &table, engine.clone(), Some(Arc::new(scan_struct)))?;
+    // The scanned data will match the logical schema, not the physical one
+    let expected_schema = Arc::new(StructType::new(vec![StructField::nullable(
+            "v",
+            DataType::VARIANT,
+        ),
+        StructField::nullable("i", DataType::INTEGER),
+        StructField::nullable("nested", StructType::new(vec![
+            StructField::nullable(
+                "nested_v",
+                DataType::VARIANT,
+            ),
+        ])),
+    ]));
+    let expected_data = RecordBatch::try_new(
+        Arc::new(expected_schema.as_ref().try_into_arrow()?),
+        vec![
+            // v variant
+            Arc::new(variant_v_array),
+            // i int
+            Arc::new(Int32Array::from(i_values)),
+            // nested struct<nested_v variant>
+            Arc::new(StructArray::try_new(
+                vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
+                vec![variant_nested_v_array],
+                None,
+            )?)
+        ],
+    ).unwrap();
+
+    test_read(&ArrowEngineData::new(expected_data), &table, engine, Some(Arc::new(read_schema)))?;
 
     Ok(())
 }
