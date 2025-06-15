@@ -20,6 +20,19 @@ pub fn unshredded_variant_struct_schema() -> DataType {
     ])
 }
 
+/// Schema visitor that checks if any column in the schema uses VARIANT type
+#[derive(Debug, Default)]
+pub(crate) struct UsesVariant(pub(crate) bool);
+
+impl<'a> SchemaTransform<'a> for UsesVariant {
+    fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
+        if *ptype == PrimitiveType::Variant {
+            self.0 = true;
+        }
+        None
+    }
+}
+
 pub(crate) fn validate_variant_type_feature_support(
     schema: &Schema,
     protocol: &Protocol,
@@ -41,19 +54,6 @@ pub(crate) fn validate_variant_type_feature_support(
         );
     }
     Ok(())
-}
-
-/// Schema visitor that checks if any column in the schema uses VARIANT type
-#[derive(Debug, Default)]
-pub(crate) struct UsesVariant(pub(crate) bool);
-
-impl<'a> SchemaTransform<'a> for UsesVariant {
-    fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
-        if *ptype == PrimitiveType::Variant {
-            self.0 = true;
-        }
-        None
-    }
 }
 
 /// Utility to make it easier for third-party engines to replace nested Variants with TAGGED
