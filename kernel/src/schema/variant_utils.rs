@@ -3,26 +3,16 @@
 use crate::table_features::{ReaderFeature, WriterFeature};
 use crate::actions::Protocol;
 use crate::{DeltaResult, Error};
-use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
-use crate::engine::arrow_conversion::TryFromKernel;
 use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
 use crate::utils::require;
 use std::borrow::Cow;
-use std::collections::HashMap;
-use delta_kernel_derive::internal_api;
 
 pub const VARIANT_METADATA: &str = "__VARIANT__";
-
-/// The variant type for arrow is a struct where where the `metadata` field is tagged with some
-/// additional metadata saying `__VARIANT__ = true`.
-pub fn variant_arrow_type() -> ArrowDataType {
-    TryFromKernel::try_from_kernel(&variant_struct_schema()).unwrap()
-}
 
 /// Variant is represented as a `STRUCT<value: BINARY, metadata: BINARY>` where the metadata field
 /// has some additional metadata saying `__VARIANT__ = true`. This makes it easier for the parquet
 /// reader to understand variant.
-pub fn variant_struct_schema() -> DataType {
+pub fn unshredded_variant_struct_schema() -> DataType {
     DataType::struct_type([
         StructField::nullable("value", DataType::BINARY),
         StructField::nullable("metadata", DataType::BINARY)
@@ -78,36 +68,11 @@ impl<'a> SchemaTransform<'a> for ReplaceVariantWithStructRepresentation {
     fn transform_primitive_to_data_type(&mut self,
         ptype: &'a PrimitiveType) -> Option<Cow<'a, DataType>> {
         if *ptype == PrimitiveType::Variant {
-            Some(Cow::Owned(variant_struct_schema()))
+            Some(Cow::Owned(unshredded_variant_struct_schema()))
         } else {
             Some(Cow::Owned(DataType::Primitive(ptype.clone())))
         }
     }
-}
-
-/// Variant arrow type without metadata tag for testing purposes
-#[allow(dead_code)]
-#[internal_api]
-pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
-    let fields = vec![value_field, metadata_field];
-    ArrowDataType::Struct(fields.into())
-}
-
-// Only used for testing purposes. Here, the arrow variant type is constructed manually instead of
-// relying on the Kernel Struct -> ArrowStruct translation. This ensures that the metadata in
-// Variant's arrow representation is added correctly.
-#[allow(dead_code)]
-#[internal_api]
-pub(crate) fn hard_coded_variant_arrow_type() -> ArrowDataType {
-    let mut tag = HashMap::new();
-    tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
-        .with_metadata(tag);
-    let fields = vec![value_field, metadata_field];
-    ArrowDataType::Struct(fields.into())
 }
 
 #[cfg(test)]
@@ -123,7 +88,7 @@ mod tests {
         let mut replace_variant =
             ReplaceVariantWithStructRepresentation();
         let transformed = replace_variant.transform(&dt);
-        assert_eq!(transformed.unwrap().into_owned(), variant_struct_schema());
+        assert_eq!(transformed.unwrap().into_owned(), unshredded_variant_struct_schema());
     }
 
     #[test]
@@ -132,7 +97,7 @@ mod tests {
         let mut replace_variant =
             ReplaceVariantWithStructRepresentation();
         let transformed = replace_variant.transform(&dt);
-        let expected: DataType = ArrayType::new(variant_struct_schema(), false).into();
+        let expected: DataType = ArrayType::new(unshredded_variant_struct_schema(), false).into();
         assert_eq!(transformed.unwrap().into_owned(), expected);
     }
 
@@ -145,7 +110,7 @@ mod tests {
                 StructField::nullable("v1", DataType::VARIANT),
                 StructField::nullable("i1", DataType::STRING),
             ])),
-            StructField::nullable("not_variant", variant_struct_schema()),
+            StructField::nullable("not_variant", unshredded_variant_struct_schema()),
         ]).into();
         // let dt: DataType = ArrayType::new(DataType::VARIANT, false).into();
         let mut replace_variant =
@@ -153,12 +118,12 @@ mod tests {
         let transformed = replace_variant.transform(&dt);
         let expected: DataType = DataType::struct_type([
             StructField::nullable("i", DataType::INTEGER),
-            StructField::nullable("v", variant_struct_schema()),
+            StructField::nullable("v", unshredded_variant_struct_schema()),
             StructField::nullable("s", DataType::struct_type([
-                StructField::nullable("v1", variant_struct_schema()),
+                StructField::nullable("v1", unshredded_variant_struct_schema()),
                 StructField::nullable("i1", DataType::STRING),
             ])),
-            StructField::nullable("not_variant", variant_struct_schema()),
+            StructField::nullable("not_variant", unshredded_variant_struct_schema()),
         ]).into();
         assert_eq!(transformed.unwrap().into_owned(), expected);
     }
@@ -169,7 +134,7 @@ mod tests {
         let mut replace_variant =
             ReplaceVariantWithStructRepresentation();
         let transformed = replace_variant.transform(&dt);
-        let expected: DataType = MapType::new(DataType::STRING, variant_struct_schema(), false).into();
+        let expected: DataType = MapType::new(DataType::STRING, unshredded_variant_struct_schema(), false).into();
         assert_eq!(transformed.unwrap().into_owned(), expected);
     }
 

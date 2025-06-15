@@ -263,10 +263,9 @@ mod tests {
     use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Fields};
 
     use crate::engine::arrow_conversion::TryFromKernel as _;
+    use crate::engine::arrow_utils::variant_arrow_type;
     use crate::schema::{ArrayType, DataType, MapType, StructField};
-    use crate::schema::variant_utils::{
-        variant_arrow_type, variant_arrow_type_without_tag, hard_coded_variant_arrow_type,
-    };
+    use crate::schema::variant_utils::VARIANT_METADATA;
 
     use super::*;
 
@@ -329,6 +328,23 @@ mod tests {
 
     #[test]
     fn ensure_variants() {
+        fn hard_coded_variant_arrow_type() -> ArrowDataType {
+            let mut tag = HashMap::new();
+            tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
+            let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+            let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
+                .with_metadata(tag);
+            let fields = vec![value_field, metadata_field];
+            ArrowDataType::Struct(fields.into())
+        }
+
+        pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
+            let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+            let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
+            let fields = vec![value_field, metadata_field];
+            ArrowDataType::Struct(fields.into())
+        }
+
         assert!(ensure_data_types(
             &DataType::VARIANT,
             &variant_arrow_type(),

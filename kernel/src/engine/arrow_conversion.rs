@@ -13,7 +13,7 @@ use crate::error::Error;
 use crate::schema::{
     ArrayType, DataType, MapType, MetadataValue, PrimitiveType, StructField, StructType,
 };
-use crate::schema::variant_utils::variant_arrow_type;
+use crate::engine::arrow_utils::variant_arrow_type;
 
 pub(crate) const LIST_ARRAY_ROOT: &str = "element";
 pub(crate) const MAP_ROOT_DEFAULT: &str = "key_value";

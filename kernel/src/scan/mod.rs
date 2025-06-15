@@ -410,12 +410,12 @@ impl Scan {
         Self::validate_logical_schema(&logical_schema)?;
 
         Ok(Self {
-            snapshot: snapshot,
-            logical_schema: logical_schema,
-            physical_schema: physical_schema,
-            physical_predicate: physical_predicate,
-            all_fields: all_fields,
-            have_partition_cols: have_partition_cols
+            snapshot,
+            logical_schema,
+            physical_schema,
+            physical_predicate,
+            all_fields,
+            have_partition_cols
         })
     }
 

@@ -75,7 +75,7 @@ pub(crate) fn test_read(
     let batches = read_scan(&scan, engine)?;
     let formatted = pretty_format_batches(&batches).unwrap().to_string();
 
-    let expected: String = pretty_format_batches(&[expected.record_batch().clone()])
+    let expected = pretty_format_batches(&[expected.record_batch().clone()])
         .unwrap()
         .to_string();
 

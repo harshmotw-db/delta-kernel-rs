@@ -154,7 +154,7 @@ impl StructField {
         self
     }
 
-    pub fn with_metadata_extended(
+    pub fn add_metadata(
         mut self,
         metadata: impl IntoIterator<Item = (impl Into<String>, impl Into<MetadataValue>)>,
     ) -> Self {

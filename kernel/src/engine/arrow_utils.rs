@@ -12,6 +12,7 @@ use crate::{
     utils::require,
     DeltaResult, EngineData, Error,
 };
+use crate::schema::variant_utils::unshredded_variant_struct_schema;
 
 use crate::arrow::array::{
     cast::AsArray, make_array, new_null_array, Array as ArrowArray, GenericListArray,
@@ -743,6 +744,12 @@ pub(crate) fn to_json_bytes(
     }
     writer.finish()?;
     Ok(writer.into_inner())
+}
+
+/// The variant type for arrow is a struct where where the `metadata` field is tagged with some
+/// additional metadata saying `__VARIANT__ = true`.
+pub fn variant_arrow_type() -> ArrowDataType {
+    ArrowDataType::try_from_kernel(&unshredded_variant_struct_schema()).unwrap()
 }
 
 #[cfg(test)]

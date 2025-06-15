@@ -21,14 +21,13 @@ use url::Url;
 
 use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
+use delta_kernel::engine::arrow_utils::variant_arrow_type;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
 use delta_kernel::schema::{
     DataType, SchemaRef, StructField, StructType, SchemaTransform
 };
-use delta_kernel::schema::variant_utils::{
-    variant_arrow_type, ReplaceVariantWithStructRepresentation,
-};
+use delta_kernel::schema::variant_utils::ReplaceVariantWithStructRepresentation;
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
 
@@ -438,7 +437,7 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context());
+        let write_context = Arc::new(txn.get_write_context(None));
         let tasks = append_data.into_iter().map(|data| {
             // arc clones
             let engine = engine.clone();
@@ -574,7 +573,7 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context());
+        let write_context = Arc::new(txn.get_write_context(None));
         let tasks = append_data
             .into_iter()
             .zip(partition_vals)
@@ -714,7 +713,7 @@ async fn test_append_invalid_schema() -> Result<(), Box<dyn std::error::Error>> 
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context());
+        let write_context = Arc::new(txn.get_write_context(None));
         let tasks = append_data.into_iter().map(|data| {
             // arc clones
             let engine = engine.clone();
@@ -921,7 +920,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context());
+    let write_context = Arc::new(txn.get_write_context(None));
 
     let write_metadata = engine
         .write_parquet(
@@ -970,18 +969,18 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             "v",
             DataType::VARIANT,
         ).with_metadata([("delta.columnMapping.physicalName", "col1")])
-        .with_metadata_extended([("delta.columnMapping.id", 1)]),
+        .add_metadata([("delta.columnMapping.id", 1)]),
         StructField::nullable("i", DataType::INTEGER)
             .with_metadata([("delta.columnMapping.physicalName", "col2")])
-            .with_metadata_extended([("delta.columnMapping.id", 2)]),
+            .add_metadata([("delta.columnMapping.id", 2)]),
         StructField::nullable("nested", StructType::new(vec![
             StructField::nullable(
                 "nested_v",
                 DataType::VARIANT,
             ).with_metadata([("delta.columnMapping.physicalName", "col21")])
-            .with_metadata_extended([("delta.columnMapping.id", 3)])
+            .add_metadata([("delta.columnMapping.id", 3)])
         ])).with_metadata([("delta.columnMapping.physicalName", "col3")])
-        .with_metadata_extended([("delta.columnMapping.id", 4),])
+        .add_metadata([("delta.columnMapping.id", 4),])
     ]));
 
     let write_schema = Arc::new(StructType::new(vec![StructField::nullable(
@@ -1073,7 +1072,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context_with_schema(write_schema.clone()));
+    let write_context = Arc::new(txn.get_write_context(Some(write_schema.clone())));
 
     let write_metadata = engine
         .write_parquet(
