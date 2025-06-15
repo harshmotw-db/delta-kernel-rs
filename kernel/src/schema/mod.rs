@@ -143,6 +143,7 @@ impl StructField {
         Self::new(name, data_type, false)
     }
 
+    /// Replaces `self.metadata` with the list of <key, value> pairs in `metadata`.
     pub fn with_metadata(
         mut self,
         metadata: impl IntoIterator<Item = (impl Into<String>, impl Into<MetadataValue>)>,
@@ -154,6 +155,7 @@ impl StructField {
         self
     }
 
+    /// Extends `self.metadata` to include the <key, value> pairs in `metadata`.
     pub fn add_metadata(
         mut self,
         metadata: impl IntoIterator<Item = (impl Into<String>, impl Into<MetadataValue>)>,

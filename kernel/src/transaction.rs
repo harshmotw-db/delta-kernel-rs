@@ -215,18 +215,18 @@ impl Transaction {
     }
 
     /// Get the write context for this transaction. At the moment, this is constant for the whole
-    /// transaction.
+    /// transaction. If `schema` is None, the schema is derived from the table snapshot.
     // Note: after we introduce metadata updates (modify table schema, etc.), we need to make sure
     // that engines cannot call this method after a metadata change, since the write context could
     // have invalid metadata.
     pub fn get_write_context(&self, schema: Option<SchemaRef>) -> WriteContext {
         let target_dir = self.read_snapshot.table_root();
-        let snapshot_schema = match schema {
+        let schema = match schema {
             Some(s) => s,
             None => self.read_snapshot.schema()
         };
-        let logical_to_physical = self.generate_logical_to_physical(&snapshot_schema);
-        WriteContext::new(target_dir.clone(), snapshot_schema, logical_to_physical)
+        let logical_to_physical = self.generate_logical_to_physical(&schema);
+        WriteContext::new(target_dir.clone(), schema, logical_to_physical)
     }
 
     /// Add write metadata about files to include in the transaction. This API can be called
