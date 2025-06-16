@@ -338,7 +338,7 @@ mod tests {
             ArrowDataType::Struct(fields.into())
         }
 
-        pub(crate) fn variant_arrow_type_without_tag() -> ArrowDataType {
+        fn variant_arrow_type_without_tag() -> ArrowDataType {
             let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
             let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
             let fields = vec![value_field, metadata_field];

@@ -59,6 +59,9 @@ pub(crate) enum ReaderFeature {
     #[strum(serialize = "variantType-preview")]
     #[serde(rename = "variantType-preview")]
     VariantTypePreview,
+    #[strum(serialize = "variantShredding-preview")]
+    #[serde(rename = "variantShredding-preview")]
+    VariantShreddingPreview,
     #[serde(untagged)]
     #[strum(default)]
     Unknown(String),
@@ -136,6 +139,9 @@ pub(crate) enum WriterFeature {
     #[strum(serialize = "variantType-preview")]
     #[serde(rename = "variantType-preview")]
     VariantTypePreview,
+    #[strum(serialize = "variantShredding-preview")]
+    #[serde(rename = "variantShredding-preview")]
+    VariantShreddingPreview,
     #[serde(untagged)]
     #[strum(default)]
     Unknown(String),
@@ -178,6 +184,12 @@ pub(crate) static SUPPORTED_READER_FEATURES: LazyLock<Vec<ReaderFeature>> = Lazy
         ReaderFeature::V2Checkpoint,
         ReaderFeature::VariantType,
         ReaderFeature::VariantTypePreview,
+        // The default engine currently DOES NOT support shredded Variant reads and the parquet
+        // reader will reject the read if it sees a shredded schema in the parquet file. That being
+        // said, kernel does permit reconstructing shredded variants into the
+        // `STRUCT<value: BINARY, metadata: BINARY>` representation if parquet readers of
+        // third-party engines support it.
+        ReaderFeature::VariantShreddingPreview,
     ]
 });
 
@@ -192,6 +204,7 @@ pub(crate) static SUPPORTED_WRITER_FEATURES: LazyLock<Vec<WriterFeature>> = Lazy
         WriterFeature::TimestampWithoutTimezone,
         WriterFeature::VariantType,
         WriterFeature::VariantTypePreview,
+        WriterFeature::VariantShreddingPreview,
     ]
 });
 
@@ -245,6 +258,7 @@ mod tests {
             (ReaderFeature::VacuumProtocolCheck, "vacuumProtocolCheck"),
             (ReaderFeature::VariantType, "variantType"),
             (ReaderFeature::VariantTypePreview, "variantType-preview"),
+            (ReaderFeature::VariantShreddingPreview, "variantShredding-preview"),
             (ReaderFeature::unknown("something"), "something"),
         ];
 
@@ -287,6 +301,7 @@ mod tests {
             (WriterFeature::ClusteredTable, "clustering"),
             (WriterFeature::VariantType, "variantType"),
             (WriterFeature::VariantTypePreview, "variantType-preview"),
+            (WriterFeature::VariantShreddingPreview, "variantShredding-preview"),
             (WriterFeature::unknown("something"), "something"),
         ];
 

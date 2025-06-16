@@ -139,6 +139,38 @@ mod tests {
     }
 
     #[test]
+    fn test_variant_to_physical_maintains_metadata() {
+        let var_field = StructField::nullable(
+            "v",
+            unshredded_variant_struct_schema(),
+        ).with_metadata([("delta.columnMapping.physicalName", "col1")])
+        .add_metadata([("delta.columnMapping.id", 1)]);
+
+        let expected = StructField::nullable(
+            "col1",
+            unshredded_variant_struct_schema(),
+        ).with_metadata([("delta.columnMapping.physicalName", "col1")])
+        .add_metadata([("delta.columnMapping.id", 1)]);
+
+        assert_eq!(var_field.make_physical(), expected);
+
+        fn unshredded_variant_struct_schema_no_meta() -> DataType {
+            DataType::struct_type([
+                StructField::nullable("value", DataType::BINARY),
+                StructField::nullable("metadata", DataType::BINARY),
+            ])
+        }
+
+        let not_expected = StructField::nullable(
+            "col1",
+            unshredded_variant_struct_schema_no_meta(),
+        ).with_metadata([("delta.columnMapping.physicalName", "col1")])
+        .add_metadata([("delta.columnMapping.id", 1)]);
+
+        assert_ne!(var_field.make_physical(), not_expected);
+    }
+
+    #[test]
     fn test_variant_feature_validation() {
         let features = vec![
             (ReaderFeature::VariantType, WriterFeature::VariantType),
