@@ -4,25 +4,27 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::env::var;
 use std::error::Error;
-use std::io::Write;
+use std::usize;
 use crate::variant_utils;
+use crate::memory_allocator::MemoryAllocator;
 
 const DEFAULT_SIZE_LIMIT: u32 = 16 * 1024 * 1024;
 
-struct VariantBuilder<'a, T: Write + ?Sized> {
-    value: &'a mut T,
-    size: u32,
-    size_limit: u32,
+struct VariantBuilder<'a, T: MemoryAllocator> {
+    value: &'a mut [u8],
+    size: usize,
+    size_limit: usize,
     dictionary: HashMap<String, u32>,
+    memory_allocator: T,
 }
 
 struct FieldEntry<'a> {
     key: &'a str,
-    id: u32,
-    offset: u32
+    id: usize,
+    offset: usize
 }
 
-impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
+impl<'a> VariantBuilder<'a> {
     fn build(&mut self, json: &Value) -> Result<(), Box<dyn Error>> {
         match json {
             Value::Null => self.append_null(),
@@ -61,7 +63,7 @@ impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
         Ok(())
     }
 
-    fn check_capacity(&self, additional: u32) -> Result<(), Box<dyn Error>> {
+    fn check_capacity(&self, additional: usize) -> Result<(), Box<dyn Error>> {
         let required = self.size + additional;
         if required > self.size_limit {
             // TODO: Formalize this error.
@@ -85,23 +87,19 @@ impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
     }
 
     fn append_int(&mut self, i: i64) -> Result<(), Box<dyn Error>> {
-        self.check_capacity(1 + variant_utils::U64_SIZE as u32)?;
+        self.check_capacity(1 + variant_utils::U64_SIZE as usize)?;
         if i as i8 as i64 == i {
             self.write_primitive_header(variant_utils::INT1)?;
-            self.value.write(&(i as i8).to_le_bytes())?;
-            self.size += variant_utils::U8_SIZE as u32;
+            self.write_bytes(&(i as i8).to_le_bytes())?;
         } else if i as i16 as i64 == i {
             self.write_primitive_header(variant_utils::INT2)?;
-            self.value.write(&(i as i16).to_le_bytes())?;
-            self.size += variant_utils::U16_SIZE as u32;
+            self.write_bytes(&(i as i16).to_le_bytes())?;
         } else if i as i32 as i64 == i {
             self.write_primitive_header(variant_utils::INT4)?;
-            self.value.write(&(i as i32).to_le_bytes())?;
-            self.size += variant_utils::U32_SIZE as u32;
+            self.write_bytes(&(i as i32).to_le_bytes())?;
         } else {
             self.write_primitive_header(variant_utils::INT8)?;
-            self.value.write(&i.to_le_bytes())?;
-            self.size += variant_utils::U64_SIZE as u32;
+            self.write_bytes(&(i as i64).to_le_bytes())?;
         }
         Ok(())
     }
@@ -109,29 +107,15 @@ impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
     fn append_string(&mut self, s: &String) -> Result<(), Box<dyn Error>> {
         let bytes = s.as_bytes();
         let long_str = bytes.len() > variant_utils::MAX_SHORT_STR_SIZE.into();
-        let additional: u32 = if long_str { 1 + variant_utils::U32_SIZE as u32 } else { 1 };
-        self.check_capacity(additional + bytes.len() as u32)?;
+        let additional = if long_str { 1 + variant_utils::U32_SIZE as usize } else { 1 };
+        self.check_capacity(additional + bytes.len())?;
         if long_str {
-            self.write_primitive_header(variant_utils::LONG_STR)?;
-            self.value.write(&(s.len() as u32).to_le_bytes())?;
-            self.size += variant_utils::U32_SIZE as u32;
+            self.write_primitive_header(variant_utils::LONG_STR);
+            self.write_bytes(&(s.len() as u32).to_le_bytes())?;
         } else {
-            self.write_short_string_header(bytes.len() as u8)?;
+            self.write_short_string_header(bytes.len() as u8);
         }
-        self.value.write(bytes)?;
-        self.size += s.len() as u32;
-        Ok(())
-    }
-
-    fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
-        self.value.write(&[(typ << 2) | variant_utils::PRIMITIVE])?;
-        self.size += 1;
-        Ok(())
-    }
-
-    fn write_short_string_header(&mut self, size: u8) -> Result<(), Box<dyn Error>> {
-        self.value.write(&[(size << 2) | variant_utils::SHORT_STR])?;
-        self.size += 1;
+        self.write_bytes(bytes)?;
         Ok(())
     }
 
@@ -146,37 +130,125 @@ impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
         }
     }
 
-    fn finish_writing__object(&mut self, start: u32, fields: &mut Vec<FieldEntry>) {
-        let num_fields = fields.len() as u32;
+    fn finish_writing__object(
+        &mut self,
+        start: usize, fields: &mut Vec<FieldEntry>
+    ) -> Result<(), Box<dyn Error>> {
+        let num_fields = fields.len();
         fields.sort_by_key(|f: &FieldEntry<'_>| f.key);
-        let mut max_id: u32 = 0;
+        let mut max_id: usize = 0;
         for field in fields {
             if field.id > max_id {
                 max_id = field.id;
             }
         }
         let data_size = self.size - start;
-        let large_size = num_fields > variant_utils::U8_MAX as u32;
-        let size_bytes: u32 = if large_size {
-            variant_utils::U32_SIZE as u32
+        let large_size = num_fields > variant_utils::U8_MAX as usize;
+        let size_bytes: usize = if large_size {
+            variant_utils::U32_SIZE as usize
         } else {
-            variant_utils::U8_SIZE as u32
+            variant_utils::U8_SIZE as usize
         };
         let id_size = self.get_integer_size(max_id);
         let offset_size = self.get_integer_size(data_size);
         let header_size = 1 + size_bytes + num_fields * id_size + (num_fields + 1) * offset_size;
         self.check_capacity(header_size);
+        self.shift_bytes(start, start + data_size, start + header_size)?;
+        self.value[start] = self.object_header(large_size, id_size as u8, offset_size as u8);
+        let id_start = start + 1 + size_bytes;
+        let offset_start = id_start + num_fields * id_size;
+        if large_size {
+            self.value[start + 1..id_start]
+                .copy_from_slice(&(num_fields as u32).to_le_bytes());
+
+        } else {
+            self.value[start + 1..id_start]
+                .copy_from_slice(&(num_fields as u8).to_le_bytes());
+        }
+        let mut id_itr = id_start;
+        let mut offset_itr = offset_start;
+        for field in fields {
+            self.value[id_itr..id_itr + id_size].copy_from_slice(src);
+        }
         
+        Ok(())
     }
 
-    fn get_integer_size(&self, value: u32) -> u32 {
-        if value <= variant_utils::U8_MAX as u32 {
-            return variant_utils::U8_SIZE as u32;
+    fn write_field_ids<T: Copy>(
+        &mut self,
+        field_start: usize,
+        id_size: usize,
+        num_fields: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        &(num_fields as T).to_le_bytes();
+        if id_size == variant_utils::U8_SIZE as usize {
+            Ok(())
+        } else if id_size == variant_utils::U16_SIZE as usize {
+            Ok(())
+        } else if id_size == variant_utils::U24_SIZE as usize {
+            Ok(())
+        } else {
+            Err("UNEXPECTED ID SIZE".into())
         }
-        if value <= variant_utils::U16_MAX as u32 {
-            return variant_utils::U16_SIZE as u32;
+    }
+
+    fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
+        self.write_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
+        Ok(())
+    }
+
+    fn write_short_string_header(&mut self, size: u8) -> Result<(), Box<dyn Error>> {
+        self.write_bytes(&[(size << 2) | variant_utils::SHORT_STR])?;
+        Ok(())
+    }
+
+    fn object_header(
+        &mut self,
+        large_size: bool,
+        id_size: u8,
+        offset_size: u8,
+    ) -> u8 {
+        ((large_size as u8) << (variant_utils::BASIC_TYPE_BYTES + 4))
+        | ((id_size - 1) << (variant_utils::BASIC_TYPE_BYTES + 2))
+        | ((offset_size - 1) << variant_utils::BASIC_TYPE_BYTES)
+        | variant_utils::OBJECT
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+        if self.size + bytes.len() > self.value.len() {
+            // Formalize this error as a proper way of reporting to the caller to send a larger
+            // buffer
+            return Err("Buffer size limit exceeded".into());
         }
-        return variant_utils::U24_SIZE as u32;
+        self.value[self.size..self.size + bytes.len()].copy_from_slice(bytes);
+        self.size += bytes.len();
+        Ok(())
+    }
+
+    fn shift_bytes(
+        &mut self,
+        new_start: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        let additional = end - start;
+        if self.size + additional > self.value.len() {
+            // Formalize this error as a proper way of reporting to the caller to send a larger
+            // buffer
+            return Err("Buffer size limit exceeded".into());
+        }
+        self.value.copy_within(start..end, new_start);
+        Ok(())
+    }
+
+    fn get_integer_size(&self, value: usize) -> usize {
+        if value <= variant_utils::U8_MAX as usize {
+            return variant_utils::U8_SIZE as usize;
+        }
+        if value <= variant_utils::U16_MAX as usize {
+            return variant_utils::U16_SIZE as usize;
+        }
+        return variant_utils::U24_SIZE as usize;
     }
 
     fn parse_decimal(d: &str, unscaled: &mut i128, scale: &mut u8) -> Result<bool, Box<dyn Error>> {
@@ -198,9 +270,9 @@ impl<'a, T: Write + ?Sized> VariantBuilder<'a, T> {
 /// Constructs a variant representation from a json string `json` (assumed to be valid utf-8) and
 /// writes the "value" and "metadata" fields of the variant into `value` and `metadata` buffers
 /// respectively.
-pub fn json_to_variant<T: Write + ?Sized, U: Write + ?Sized>(
-    value: &mut T,
-    metadata: &mut U,
+pub fn json_to_variant(
+    value: &mut [u8],
+    metadata: &mut [u8],
     json: &str,
 ) -> Result<(), Box<dyn Error>> {
     let json: Value = serde_json::from_str(json)?;

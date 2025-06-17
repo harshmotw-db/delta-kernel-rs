@@ -2,3 +2,4 @@
 
 pub mod json;
 pub(crate) mod variant_utils;
+pub mod memory_allocator;
