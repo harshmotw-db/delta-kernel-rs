@@ -1,20 +1,21 @@
 //! Tools for working with JSON strings and Variants
 
 use serde_json::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::env::var;
 use std::error::Error;
+use std::rc::Rc;
 use std::usize;
-use crate::variant_utils;
-use crate::memory_allocator::MemoryAllocator;
+use crate::{memory_allocator, variant_utils};
+use crate::memory_allocator::{MemoryAllocator, SampleMemoryAllocator};
 
-const DEFAULT_SIZE_LIMIT: u32 = 16 * 1024 * 1024;
+const DEFAULT_SIZE_LIMIT: usize = 16 * 1024 * 1024;
 
-struct VariantBuilder<'a, T: MemoryAllocator> {
-    value: &'a mut [u8],
+struct VariantBuilder<T: MemoryAllocator> {
+    value: Rc<RefCell<Box<[u8]>>>,
     size: usize,
     size_limit: usize,
-    dictionary: HashMap<String, u32>,
+    dictionary: HashMap<String, usize>,
     memory_allocator: T,
 }
 
@@ -24,7 +25,7 @@ struct FieldEntry<'a> {
     offset: usize
 }
 
-impl<'a> VariantBuilder<'a> {
+impl<T: MemoryAllocator> VariantBuilder<T> {
     fn build(&mut self, json: &Value) -> Result<(), Box<dyn Error>> {
         match json {
             Value::Null => self.append_null(),
@@ -63,11 +64,19 @@ impl<'a> VariantBuilder<'a> {
         Ok(())
     }
 
-    fn check_capacity(&self, additional: usize) -> Result<(), Box<dyn Error>> {
+    fn check_capacity(&mut self, additional: usize) -> Result<(), Box<dyn Error>> {
         let required = self.size + additional;
         if required > self.size_limit {
             // TODO: Formalize this error.
             return Err("Variant size limit exceeded.".into());
+        }
+        let cur_len = self.value.borrow().len();
+        if required > cur_len {
+            // Need to get new buffer
+            let new_size = required.next_power_of_two();
+            let old_value = self.value.clone();
+            self.value = self.memory_allocator.get_buffer(new_size)?;
+            self.value.borrow_mut()[0..self.size].copy_from_slice(&old_value.borrow()[0..self.size]);
         }
         Ok(())
     }
@@ -119,11 +128,11 @@ impl<'a> VariantBuilder<'a> {
         Ok(())
     }
 
-    fn add_key(&mut self, key: &str) -> u32 {
+    fn add_key(&mut self, key: &str) -> usize {
         match self.dictionary.get(key) {
             Some(id) => id.clone(),
             None => {
-                let id: u32 = self.dictionary.len() as u32;
+                let id = self.dictionary.len();
                 self.dictionary.insert(key.to_string(), id);
                 id
             }
@@ -154,43 +163,41 @@ impl<'a> VariantBuilder<'a> {
         let header_size = 1 + size_bytes + num_fields * id_size + (num_fields + 1) * offset_size;
         self.check_capacity(header_size);
         self.shift_bytes(start, start + data_size, start + header_size)?;
-        self.value[start] = self.object_header(large_size, id_size as u8, offset_size as u8);
+        let mut borrowed_value = self.value.borrow_mut();
+        borrowed_value[start] = self.object_header(large_size, id_size as u8, offset_size as u8);
         let id_start = start + 1 + size_bytes;
         let offset_start = id_start + num_fields * id_size;
         if large_size {
-            self.value[start + 1..id_start]
+            borrowed_value[start + 1..id_start]
                 .copy_from_slice(&(num_fields as u32).to_le_bytes());
 
         } else {
-            self.value[start + 1..id_start]
+            borrowed_value[start + 1..id_start]
                 .copy_from_slice(&(num_fields as u8).to_le_bytes());
         }
         let mut id_itr = id_start;
         let mut offset_itr = offset_start;
-        for field in fields {
-            self.value[id_itr..id_itr + id_size].copy_from_slice(src);
-        }
-        
+
         Ok(())
     }
 
-    fn write_field_ids<T: Copy>(
-        &mut self,
-        field_start: usize,
-        id_size: usize,
-        num_fields: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        &(num_fields as T).to_le_bytes();
-        if id_size == variant_utils::U8_SIZE as usize {
-            Ok(())
-        } else if id_size == variant_utils::U16_SIZE as usize {
-            Ok(())
-        } else if id_size == variant_utils::U24_SIZE as usize {
-            Ok(())
-        } else {
-            Err("UNEXPECTED ID SIZE".into())
-        }
-    }
+    // fn write_field_ids<T: Copy>(
+    //     &mut self,
+    //     field_start: usize,
+    //     id_size: usize,
+    //     num_fields: usize,
+    // ) -> Result<(), Box<dyn Error>> {
+    //     &(num_fields as T).to_le_bytes();
+    //     if id_size == variant_utils::U8_SIZE as usize {
+    //         Ok(())
+    //     } else if id_size == variant_utils::U16_SIZE as usize {
+    //         Ok(())
+    //     } else if id_size == variant_utils::U24_SIZE as usize {
+    //         Ok(())
+    //     } else {
+    //         Err("UNEXPECTED ID SIZE".into())
+    //     }
+    // }
 
     fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
         self.write_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
@@ -203,7 +210,7 @@ impl<'a> VariantBuilder<'a> {
     }
 
     fn object_header(
-        &mut self,
+        &self,
         large_size: bool,
         id_size: u8,
         offset_size: u8,
@@ -215,12 +222,12 @@ impl<'a> VariantBuilder<'a> {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-        if self.size + bytes.len() > self.value.len() {
-            // Formalize this error as a proper way of reporting to the caller to send a larger
-            // buffer
-            return Err("Buffer size limit exceeded".into());
+        let mut borrowed_value = self.value.borrow_mut();
+        if self.size + bytes.len() > borrowed_value.len() {
+            // Formalize this error
+            return Err("Buffer size insufficient. There might be a bug in the memory allocator.".into());
         }
-        self.value[self.size..self.size + bytes.len()].copy_from_slice(bytes);
+        borrowed_value[self.size..self.size + bytes.len()].copy_from_slice(bytes);
         self.size += bytes.len();
         Ok(())
     }
@@ -232,12 +239,13 @@ impl<'a> VariantBuilder<'a> {
         end: usize,
     ) -> Result<(), Box<dyn Error>> {
         let additional = end - start;
-        if self.size + additional > self.value.len() {
+        let mut borrowed_value = self.value.borrow_mut();
+        if self.size + additional > borrowed_value.len() {
             // Formalize this error as a proper way of reporting to the caller to send a larger
             // buffer
             return Err("Buffer size limit exceeded".into());
         }
-        self.value.copy_within(start..end, new_start);
+        borrowed_value.copy_within(start..end, new_start);
         Ok(())
     }
 
@@ -271,49 +279,57 @@ impl<'a> VariantBuilder<'a> {
 /// writes the "value" and "metadata" fields of the variant into `value` and `metadata` buffers
 /// respectively.
 pub fn json_to_variant(
-    value: &mut [u8],
+    value: &mut Rc<RefCell<Box<[u8]>>>,
     metadata: &mut [u8],
+    value_size: &mut usize,
     json: &str,
 ) -> Result<(), Box<dyn Error>> {
     let json: Value = serde_json::from_str(json)?;
+    let memory_allocator = SampleMemoryAllocator {
+        buffer: value.clone()
+    };
+
     let mut vb = VariantBuilder {
-        value: value,
+        value: value.clone(),
         size: 0,
         dictionary: HashMap::new(),
         size_limit: DEFAULT_SIZE_LIMIT,
+        memory_allocator: memory_allocator,
     };
     vb.build(&json)?;
+    *value_size = vb.size;
+    *value = vb.memory_allocator.buffer;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use std::error::Error;
-    use std::io::Cursor;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use crate::json::json_to_variant;
 
     #[test]
     fn test_json_to_variant() -> Result<(), Box<dyn Error>> {
-        fn compare_results(json: &str, expected_value: Vec<u8>) -> Result<(), Box<dyn Error>> {
+        fn compare_results(json: &str, expected_value: &[u8]) -> Result<(), Box<dyn Error>> {
             let json = json;
-            let value_buffer: Vec<u8> = Vec::new();
-            let metadata_buffer: Vec<u8> = Vec::new();
-            let mut value_cursor = Cursor::new(value_buffer);
-            let mut metadata_cursor = Cursor::new(metadata_buffer);
-            json_to_variant(&mut value_cursor, &mut metadata_cursor, json)?;
-            assert_eq!(value_cursor.into_inner(), expected_value);
+            let mut value_buffer: Rc<RefCell<Box<[u8]>>> = Rc::new(RefCell::new(Box::new([0u8; 1])));
+            let mut value_size: usize = 0;
+            json_to_variant(&mut value_buffer, &mut [1, 2, 3, 4, 5], &mut value_size, json)?;
+            let computed_slize: &[u8] = &*value_buffer.borrow();
+            assert_eq!(&computed_slize[..value_size], expected_value);
             Ok(())
         }
 
-        compare_results("null", vec![0u8])?;
-        compare_results("true", vec![4u8])?;
-        compare_results("false", vec![8u8])?;
-        compare_results("  127 ", vec![12u8, 127u8])?;
-        compare_results("  -128  ", vec![12u8, 128u8])?;
-        compare_results(" 27134  ", vec![16u8, 254u8, 105u8])?;
-        compare_results(" -32767431  ", vec![20u8, 57u8, 2u8, 12u8, 254u8])?;
+        compare_results("null", &[0u8])?;
+        compare_results("true", &[4u8])?;
+        compare_results("false", &[8u8])?;
+        compare_results("  127 ", &[12u8, 127u8])?;
+        compare_results("  -128  ", &[12u8, 128u8])?;
+        compare_results(" 27134  ", &[16u8, 254u8, 105u8])?;
+        compare_results(" -32767431  ", &[20u8, 57u8, 2u8, 12u8, 254u8])?;
         compare_results("92842754201389",
-            vec![24u8, 45u8, 87u8, 98u8, 163u8, 112u8, 84u8, 0u8, 0u8])?;
+            &[24u8, 45u8, 87u8, 98u8, 163u8, 112u8, 84u8, 0u8, 0u8])?;
         Ok(())
     }
 }
