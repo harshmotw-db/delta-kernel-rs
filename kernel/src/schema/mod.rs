@@ -160,9 +160,8 @@ impl StructField {
         mut self,
         metadata: impl IntoIterator<Item = (impl Into<String>, impl Into<MetadataValue>)>,
     ) -> Self {
-        self.metadata.extend(metadata
-            .into_iter()
-            .map(|(k, v)| (k.into(), v.into())));
+        self.metadata
+            .extend(metadata.into_iter().map(|(k, v)| (k.into(), v.into())));
         self
     }
 
@@ -637,7 +636,7 @@ impl Display for PrimitiveType {
             PrimitiveType::Decimal(dtype) => {
                 write!(f, "decimal({},{})", dtype.precision(), dtype.scale())
             }
-            PrimitiveType::Variant => write!(f, "variant")
+            PrimitiveType::Variant => write!(f, "variant"),
         }
     }
 }
@@ -778,7 +777,9 @@ impl Display for DataType {
 pub trait SchemaTransform<'a> {
     /// Decides whether to transform primitives using `transform_primitive` or
     /// `transform_primitive_to_data_type`.
-    fn should_transform_primitive_to_data_type(&self) -> bool { false }
+    fn should_transform_primitive_to_data_type(&self) -> bool {
+        false
+    }
 
     /// Called for each primitive encountered during the schema traversal.
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
@@ -787,7 +788,10 @@ pub trait SchemaTransform<'a> {
 
     /// Called for each primitive encountered during the schema traversal. Allows for primitive type
     /// to be transformed to non-primitive data type.
-    fn transform_primitive_to_data_type(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, DataType>> {
+    fn transform_primitive_to_data_type(
+        &mut self,
+        ptype: &'a PrimitiveType,
+    ) -> Option<Cow<'a, DataType>> {
         Some(Cow::Owned(DataType::Primitive(ptype.clone())))
     }
 

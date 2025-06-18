@@ -65,9 +65,7 @@ impl EnsureDataTypes {
             (DataType::Primitive(_), _) if arrow_type.is_primitive() => {
                 check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
-            (&DataType::VARIANT, _) => {
-                check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
-            }
+            (&DataType::VARIANT, _) => check_cast_compat(kernel_type.try_into_arrow()?, arrow_type),
             // strings, bools, and binary  aren't primitive in arrow
             (&DataType::BOOLEAN, ArrowDataType::Boolean)
             | (&DataType::STRING, ArrowDataType::Utf8)
@@ -264,8 +262,8 @@ mod tests {
 
     use crate::engine::arrow_conversion::TryFromKernel as _;
     use crate::engine::arrow_utils::variant_arrow_type;
-    use crate::schema::{ArrayType, DataType, MapType, StructField};
     use crate::schema::variant_utils::VARIANT_METADATA;
+    use crate::schema::{ArrayType, DataType, MapType, StructField};
 
     use super::*;
 
@@ -332,8 +330,8 @@ mod tests {
             let mut tag = HashMap::new();
             tag.insert(VARIANT_METADATA.to_string(), "true".to_string());
             let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-            let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true)
-                .with_metadata(tag);
+            let metadata_field =
+                ArrowField::new("metadata", ArrowDataType::Binary, true).with_metadata(tag);
             let fields = vec![value_field, metadata_field];
             ArrowDataType::Struct(fields.into())
         }
@@ -345,24 +343,13 @@ mod tests {
             ArrowDataType::Struct(fields.into())
         }
 
-        assert!(ensure_data_types(
-            &DataType::VARIANT,
-            &variant_arrow_type(),
-            true
-        )
-        .is_ok());
-        assert!(ensure_data_types(
-            &DataType::VARIANT,
-            &hard_coded_variant_arrow_type(),
-            true
-        )
-        .is_ok());
-        assert!(ensure_data_types(
-            &DataType::VARIANT,
-            &variant_arrow_type_without_tag(),
-            true
-        )
-        .is_err());
+        assert!(ensure_data_types(&DataType::VARIANT, &variant_arrow_type(), true).is_ok());
+        assert!(
+            ensure_data_types(&DataType::VARIANT, &hard_coded_variant_arrow_type(), true).is_ok()
+        );
+        assert!(
+            ensure_data_types(&DataType::VARIANT, &variant_arrow_type_without_tag(), true).is_err()
+        );
     }
 
     #[test]

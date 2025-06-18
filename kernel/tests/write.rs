@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use delta_kernel::arrow::array::{ArrayRef, BinaryArray, StructArray};
 use delta_kernel::arrow::array::{
     Int32Array, MapBuilder, MapFieldNames, StringArray, StringBuilder, TimestampMicrosecondArray,
 };
-use delta_kernel::arrow::array::{ArrayRef, BinaryArray, StructArray};
 use delta_kernel::arrow::buffer::NullBuffer;
 use delta_kernel::arrow::datatypes::{DataType as ArrowDataType, Field, Schema as ArrowSchema};
 use delta_kernel::arrow::error::ArrowError;
@@ -24,10 +24,8 @@ use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::arrow_utils::variant_arrow_type;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::DefaultEngine;
-use delta_kernel::schema::{
-    DataType, SchemaRef, StructField, StructType, SchemaTransform
-};
 use delta_kernel::schema::variant_utils::ReplaceVariantWithStructRepresentation;
+use delta_kernel::schema::{DataType, SchemaRef, SchemaTransform, StructField, StructType};
 use delta_kernel::Error as KernelError;
 use delta_kernel::{DeltaResult, Table};
 
@@ -970,35 +968,30 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tracing_subscriber::fmt::try_init();
 
     // create a table with VARIANT column
-    let table_schema = Arc::new(StructType::new(vec![StructField::nullable(
-            "v",
-            DataType::VARIANT,
-        ).with_metadata([("delta.columnMapping.physicalName", "col1")])
-        .add_metadata([("delta.columnMapping.id", 1)]),
+    let table_schema = Arc::new(StructType::new(vec![
+        StructField::nullable("v", DataType::VARIANT)
+            .with_metadata([("delta.columnMapping.physicalName", "col1")])
+            .add_metadata([("delta.columnMapping.id", 1)]),
         StructField::nullable("i", DataType::INTEGER)
             .with_metadata([("delta.columnMapping.physicalName", "col2")])
             .add_metadata([("delta.columnMapping.id", 2)]),
-        StructField::nullable("nested", StructType::new(vec![
-            StructField::nullable(
-                "nested_v",
-                DataType::VARIANT,
-            ).with_metadata([("delta.columnMapping.physicalName", "col21")])
-            .add_metadata([("delta.columnMapping.id", 3)])
-        ])).with_metadata([("delta.columnMapping.physicalName", "col3")])
-        .add_metadata([("delta.columnMapping.id", 4),])
+        StructField::nullable(
+            "nested",
+            StructType::new(vec![StructField::nullable("nested_v", DataType::VARIANT)
+                .with_metadata([("delta.columnMapping.physicalName", "col21")])
+                .add_metadata([("delta.columnMapping.id", 3)])]),
+        )
+        .with_metadata([("delta.columnMapping.physicalName", "col3")])
+        .add_metadata([("delta.columnMapping.id", 4)]),
     ]));
 
-    let write_schema = Arc::new(StructType::new(vec![StructField::nullable(
-            "col1",
-            DataType::VARIANT,
-        ),
+    let write_schema = Arc::new(StructType::new(vec![
+        StructField::nullable("col1", DataType::VARIANT),
         StructField::nullable("col2", DataType::INTEGER),
-        StructField::nullable("col3", StructType::new(vec![
-            StructField::nullable(
-                "col21",
-                DataType::VARIANT,
-            ),
-        ])),
+        StructField::nullable(
+            "col3",
+            StructType::new(vec![StructField::nullable("col21", DataType::VARIANT)]),
+        ),
     ]));
 
     let (store, engine, table_location) = setup("test_table_variant", true);
@@ -1019,19 +1012,35 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let mut txn = table
         .new_transaction(&engine)?
         .with_commit_info(commit_info);
-    
+
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
-    let value_v = vec![Some(&[0x0C, 0x01][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
-    let metadata_v = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
+    let value_v = vec![
+        Some(&[0x0C, 0x01][..]),
+        None,
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
+    ];
+    let metadata_v = vec![
+        Some(&[0x01, 0x00, 0x00][..]),
+        None,
+        Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..]),
+    ];
 
     let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
     let metadata_v_array = Arc::new(BinaryArray::from(metadata_v)) as ArrayRef;
 
     // First value corresponds to the variant value "2". Third value corresponds to the variant
     // representing the JSON Object {"b":3}.
-    let value_nested_v = vec![Some(&[0x0C, 0x02][..]), None, Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..])];
-    let metadata_nested_v = vec![Some(&[0x01, 0x00, 0x00][..]), None, Some(&[0x01, 0x01, 0x00, 0x01, 0x62][..])];
+    let value_nested_v = vec![
+        Some(&[0x0C, 0x02][..]),
+        None,
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..]),
+    ];
+    let metadata_nested_v = vec![
+        Some(&[0x01, 0x00, 0x00][..]),
+        None,
+        Some(&[0x01, 0x01, 0x00, 0x01, 0x62][..]),
+    ];
 
     let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
     let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
@@ -1042,7 +1051,9 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let fields = match variant_arrow {
         ArrowDataType::Struct(fields) => Ok(fields),
-        _ => Err(KernelError::Generic("Variant arrow data type is not struct.".to_string()))
+        _ => Err(KernelError::Generic(
+            "Variant arrow data type is not struct.".to_string(),
+        )),
     }?;
 
     let null_bitmap = NullBuffer::from_iter([true, false, true]);
@@ -1071,9 +1082,10 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
                 vec![Field::new("col21", variant_arrow_type(), true)].into(),
                 vec![variant_nested_v_array.clone()],
                 None,
-            )?)
+            )?),
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Write data
     let engine = Arc::new(engine);
@@ -1111,34 +1123,38 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     assert!(parsed_commits[1].get("add").is_some());
 
     // Verify that `VARIANT` cannot be provided as read schema.
-    let invalid_read = test_read(&ArrowEngineData::new(data.clone()), &table, engine.clone(), None);
+    let invalid_read = test_read(
+        &ArrowEngineData::new(data.clone()),
+        &table,
+        engine.clone(),
+        None,
+    );
     assert!(invalid_read.is_err());
-    assert!(invalid_read.unwrap_err()
-        .to_string().contains("The logical schema must not contain `VARIANT`."));
+    assert!(invalid_read
+        .unwrap_err()
+        .to_string()
+        .contains("The logical schema must not contain `VARIANT`."));
 
     // Verify that Data is read correctly if the schema provided is Struct of two binaries
     let mut replace_variant = ReplaceVariantWithStructRepresentation();
     let schema_dt: DataType = (*table_schema).clone().into();
-    let scan_schema = replace_variant.transform(&schema_dt)
+    let scan_schema = replace_variant
+        .transform(&schema_dt)
         .ok_or_else(|| KernelError::Generic("Schema is None!!!".to_string()))?;
     // The logical read schema
     let read_schema = match &*scan_schema {
         DataType::Struct(struc) => Ok((**struc).clone()),
-        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string()))
+        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string())),
     }?;
 
     // The scanned data will match the logical schema, not the physical one
-    let expected_schema = Arc::new(StructType::new(vec![StructField::nullable(
-            "v",
-            DataType::VARIANT,
-        ),
+    let expected_schema = Arc::new(StructType::new(vec![
+        StructField::nullable("v", DataType::VARIANT),
         StructField::nullable("i", DataType::INTEGER),
-        StructField::nullable("nested", StructType::new(vec![
-            StructField::nullable(
-                "nested_v",
-                DataType::VARIANT,
-            ),
-        ])),
+        StructField::nullable(
+            "nested",
+            StructType::new(vec![StructField::nullable("nested_v", DataType::VARIANT)]),
+        ),
     ]));
     let expected_data = RecordBatch::try_new(
         Arc::new(expected_schema.as_ref().try_into_arrow()?),
@@ -1152,11 +1168,17 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
                 vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
                 vec![variant_nested_v_array],
                 None,
-            )?)
+            )?),
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
-    test_read(&ArrowEngineData::new(expected_data), &table, engine, Some(Arc::new(read_schema)))?;
+    test_read(
+        &ArrowEngineData::new(expected_data),
+        &table,
+        engine,
+        Some(Arc::new(read_schema)),
+    )?;
 
     Ok(())
 }
@@ -1168,23 +1190,21 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     // setup tracing
     let _ = tracing_subscriber::fmt::try_init();
     let table_schema = Arc::new(StructType::new(vec![StructField::nullable(
-            "v",
-            DataType::VARIANT,
-        )
-    ]));
+        "v",
+        DataType::VARIANT,
+    )]));
 
     // The table will be attempted to be written in this form but be read into
     // STRUCT<value: BINARY, metadata: BINARY>. The read should fail because the default engine
     // currently does not support shredded reads.
     let shredded_write_schema = Arc::new(StructType::new(vec![StructField::nullable(
-            "v",
-            DataType::struct_type([
-                StructField::new("value", DataType::BINARY, true),
-                StructField::new("metadata", DataType::BINARY, true),
-                StructField::new("typed_value", DataType::INTEGER, true),
-            ]),
-        )
-    ]));
+        "v",
+        DataType::struct_type([
+            StructField::new("value", DataType::BINARY, true),
+            StructField::new("metadata", DataType::BINARY, true),
+            StructField::new("typed_value", DataType::INTEGER, true),
+        ]),
+    )]));
 
     let (store, engine, table_location) = setup("test_table_variant_2", true);
     let table = create_table(
@@ -1194,7 +1214,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
         &[],
         true,
         false,
-        true, // enable "variantType" feature
+        true,  // enable "variantType" feature
         false, // enable "columnMapping" feature
     )
     .await?;
@@ -1207,23 +1227,34 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
-    let value_v = vec![Some(&[0x0C, 0x01][..]), Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..])];
-    let metadata_v = vec![Some(&[0x01, 0x00, 0x00][..]), Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..])];
+    let value_v = vec![
+        Some(&[0x0C, 0x01][..]),
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
+    ];
+    let metadata_v = vec![
+        Some(&[0x01, 0x00, 0x00][..]),
+        Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..]),
+    ];
     let typed_value_v = vec![Some(21), Some(3)];
 
     let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
     let metadata_v_array = Arc::new(BinaryArray::from(metadata_v)) as ArrayRef;
     let typed_value_v_array = Arc::new(Int32Array::from(typed_value_v)) as ArrayRef;
 
-    let variant_arrow = ArrowDataType::Struct(vec![
-        Field::new("value", ArrowDataType::Binary, true),
-        Field::new("metadata", ArrowDataType::Binary, true),
-        Field::new("typed_value", ArrowDataType::Int32, true),
-    ].into());
+    let variant_arrow = ArrowDataType::Struct(
+        vec![
+            Field::new("value", ArrowDataType::Binary, true),
+            Field::new("metadata", ArrowDataType::Binary, true),
+            Field::new("typed_value", ArrowDataType::Int32, true),
+        ]
+        .into(),
+    );
 
     let fields = match variant_arrow {
         ArrowDataType::Struct(fields) => Ok(fields),
-        _ => Err(KernelError::Generic("Variant arrow data type is not struct.".to_string()))
+        _ => Err(KernelError::Generic(
+            "Variant arrow data type is not struct.".to_string(),
+        )),
     }?;
 
     let variant_v_array = StructArray::try_new(
@@ -1238,7 +1269,8 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
             // v variant
             Arc::new(variant_v_array.clone()),
         ],
-    ).unwrap();
+    )
+    .unwrap();
 
     let engine = Arc::new(engine);
     let write_context = Arc::new(txn.get_write_context(Some(shredded_write_schema.clone())));
@@ -1276,15 +1308,21 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     let mut replace_variant = ReplaceVariantWithStructRepresentation();
     let schema_dt: DataType = (*table_schema).clone().into();
-    let scan_schema = replace_variant.transform(&schema_dt)
+    let scan_schema = replace_variant
+        .transform(&schema_dt)
         .ok_or_else(|| KernelError::Generic("Schema is None!!!".to_string()))?;
     // The logical read schema
     let read_schema = match &*scan_schema {
         DataType::Struct(struc) => Ok((**struc).clone()),
-        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string()))
+        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string())),
     }?;
 
-    let res = test_read(&ArrowEngineData::new(data), &table, engine, Some(Arc::new(read_schema)));
+    let res = test_read(
+        &ArrowEngineData::new(data),
+        &table,
+        engine,
+        Some(Arc::new(read_schema)),
+    );
     assert!(matches!(res,
         Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
 

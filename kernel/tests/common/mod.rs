@@ -4,8 +4,8 @@ use delta_kernel::arrow::util::pretty::pretty_format_batches;
 use itertools::Itertools;
 
 use crate::ArrowEngineData;
-use delta_kernel::schema::SchemaRef;
 use delta_kernel::scan::Scan;
+use delta_kernel::schema::SchemaRef;
 use delta_kernel::{DeltaResult, Engine, EngineData, Table};
 
 use std::sync::Arc;
@@ -71,7 +71,10 @@ pub(crate) fn test_read(
     schema: Option<SchemaRef>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = table.snapshot(engine.as_ref(), None)?;
-    let scan = snapshot.into_scan_builder().with_schema_opt(schema).build()?;
+    let scan = snapshot
+        .into_scan_builder()
+        .with_schema_opt(schema)
+        .build()?;
     let batches = read_scan(&scan, engine)?;
     let formatted = pretty_format_batches(&batches).unwrap().to_string();
 

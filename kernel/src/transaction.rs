@@ -223,7 +223,7 @@ impl Transaction {
         let target_dir = self.read_snapshot.table_root();
         let schema = match schema {
             Some(s) => s,
-            None => self.read_snapshot.schema()
+            None => self.read_snapshot.schema(),
         };
         let logical_to_physical = self.generate_logical_to_physical(&schema);
         WriteContext::new(target_dir.clone(), schema, logical_to_physical)

@@ -625,7 +625,7 @@ impl PrimitiveType {
                 }
             }
             // Scalar Variant is not supported yet.
-            Variant => Err(self.parse_error(raw))
+            Variant => Err(self.parse_error(raw)),
         }
     }
 
@@ -853,7 +853,10 @@ mod tests {
     fn test_variant_expect_fail() {
         let s = PrimitiveType::Variant;
         let res = s.parse_scalar("1");
-        assert!(res.is_err(), "Variant scalar works even though it is not supposed to.");
+        assert!(
+            res.is_err(),
+            "Variant scalar works even though it is not supposed to."
+        );
     }
 
     #[test]

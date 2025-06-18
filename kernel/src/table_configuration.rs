@@ -13,8 +13,8 @@ use std::sync::{Arc, LazyLock};
 use url::Url;
 
 use crate::actions::{ensure_supported_features, Metadata, Protocol};
-use crate::schema::{InvariantChecker, SchemaRef};
 use crate::schema::variant_utils::validate_variant_type_feature_support;
+use crate::schema::{InvariantChecker, SchemaRef};
 use crate::table_features::{
     column_mapping_mode, validate_schema_column_mapping, validate_timestamp_ntz_feature_support,
     ColumnMappingMode, ReaderFeature, WriterFeature,
@@ -671,12 +671,8 @@ mod test {
         );
         assert!(result.unwrap_err().to_string().contains("variantType"));
 
-        let result = TableConfiguration::try_new(
-            metadata,
-            protocol_with_variant_features,
-            table_root,
-            0,
-        );
+        let result =
+            TableConfiguration::try_new(metadata, protocol_with_variant_features, table_root, 0);
         assert!(
             result.is_ok(),
             "Should succeed when VARIANT is used with required features"

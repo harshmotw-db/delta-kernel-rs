@@ -21,16 +21,16 @@ use crate::kernel_predicates::{DefaultKernelPredicateEvaluator, EmptyColumnResol
 use crate::log_replay::{ActionsBatch, HasSelectionVector};
 use crate::log_segment::{ListedLogFiles, LogSegment};
 use crate::scan::state::{DvInfo, Stats};
+use crate::schema::variant_utils::UsesVariant;
 use crate::schema::ToSchema as _;
 use crate::schema::{
     ArrayType, DataType, MapType, PrimitiveType, Schema, SchemaRef, SchemaTransform, StructField,
     StructType,
 };
-use crate::schema::variant_utils::UsesVariant;
 use crate::snapshot::Snapshot;
 use crate::table_features::ColumnMappingMode;
-use crate::{DeltaResult, Engine, EngineData, Error, FileMeta, Version};
 use crate::utils::require;
+use crate::{DeltaResult, Engine, EngineData, Error, FileMeta, Version};
 
 use self::log_replay::scan_action_iter;
 
@@ -405,7 +405,7 @@ impl Scan {
         physical_schema: SchemaRef,
         physical_predicate: PhysicalPredicate,
         all_fields: Arc<Vec<ColumnType>>,
-        have_partition_cols: bool
+        have_partition_cols: bool,
     ) -> DeltaResult<Self> {
         Self::validate_logical_schema(&logical_schema)?;
 
@@ -415,7 +415,7 @@ impl Scan {
             physical_schema,
             physical_predicate,
             all_fields,
-            have_partition_cols
+            have_partition_cols,
         })
     }
 
@@ -424,13 +424,13 @@ impl Scan {
         // as Struct<value: Binary, metadata: Binary>, the logical schema must contain the struct
         // representation instead. This is to ensure extensibility to shredding.
         let mut uses_variant = UsesVariant::default();
-        uses_variant.transform_struct(&*logical_schema);
+        uses_variant.transform_struct(logical_schema);
         require!(
             !uses_variant.0,
             Error::unsupported(
-                "The logical schema must not contain `VARIANT`. It must be ".to_owned() +
-                "specific about the scanned format of VARIANT columns (for example, " +
-                "STRUCT<value: BINARY, metadata: BINARY>)."
+                "The logical schema must not contain `VARIANT`. It must be ".to_owned()
+                    + "specific about the scanned format of VARIANT columns (for example, "
+                    + "STRUCT<value: BINARY, metadata: BINARY>)."
             )
         );
         Ok(())
