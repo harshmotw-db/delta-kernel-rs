@@ -1,6 +1,7 @@
 pub const PRIMITIVE: u8 = 0;
 pub const SHORT_STR: u8 = 1;
 pub const OBJECT: u8 = 2;
+pub const ARRAY: u8 = 3;
 
 pub const NULL: u8 = 0;
 pub const TRUE: u8 = 1;
@@ -28,4 +29,4 @@ pub const U64_SIZE: u8 = 8;
 pub const U8_MAX: u8 = 0xFF;
 pub const U16_MAX: u16 = 0xFFFF;
 
-pub const BASIC_TYPE_BYTES: u8 = 2;
+pub const BASIC_TYPE_BITS: u8 = 2;
