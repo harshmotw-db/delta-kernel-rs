@@ -277,11 +277,10 @@ fn validate_parquet_variant(field: &ArrowField) -> DeltaResult<()> {
             if fields.len() != 2 {
                 return Err(variant_parquet_error(field.name()));
             }
-            let variant_keys = ["value", "metadata"];
-            let contains_keys = variant_keys
-                .iter()
-                .all(|key| fields.iter().any(|field| field.name() == *key));
-            if !contains_keys {
+            if !matches!(
+                (fields[0].name().as_str(), fields[1].name().as_str()),
+                ("value", "metadata") | ("metadata", "value")
+            ) {
                 return Err(variant_parquet_error(field.name()));
             }
             Ok(())

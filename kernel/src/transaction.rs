@@ -221,10 +221,7 @@ impl Transaction {
     // have invalid metadata.
     pub fn get_write_context(&self, schema: Option<SchemaRef>) -> WriteContext {
         let target_dir = self.read_snapshot.table_root();
-        let schema = match schema {
-            Some(s) => s,
-            None => self.read_snapshot.schema(),
-        };
+        let schema = schema.unwrap_or_else(|| self.read_snapshot.schema());
         let logical_to_physical = self.generate_logical_to_physical(&schema);
         WriteContext::new(target_dir.clone(), schema, logical_to_physical)
     }

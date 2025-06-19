@@ -399,7 +399,7 @@ impl std::fmt::Debug for Scan {
 }
 
 impl Scan {
-    pub fn new(
+    fn new(
         snapshot: Arc<Snapshot>,
         logical_schema: SchemaRef,
         physical_schema: SchemaRef,

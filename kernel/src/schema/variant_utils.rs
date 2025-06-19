@@ -1,7 +1,7 @@
 //! Utility functions for the variant type and variant-related table features.
 
 use crate::actions::Protocol;
-use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
+use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField, StructType};
 use crate::table_features::{ReaderFeature, WriterFeature};
 use crate::utils::require;
 use crate::{DeltaResult, Error};
@@ -18,6 +18,14 @@ pub fn unshredded_variant_struct_schema() -> DataType {
         StructField::nullable("metadata", DataType::BINARY)
             .with_metadata([(VARIANT_METADATA, "true")]),
     ])
+}
+
+pub fn is_unshredded_variant(s: &StructType) -> bool {
+    if let DataType::Struct(boxed_schema) = unshredded_variant_struct_schema() {
+        s == boxed_schema.as_ref()
+    } else {
+        unreachable!("unshredded_variant_struct_schema must return DataType::Struct");
+    }
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
@@ -175,6 +183,23 @@ mod tests {
                 .add_metadata([("delta.columnMapping.id", 1)]);
 
         assert_ne!(var_field.make_physical(), not_expected);
+    }
+
+    #[test]
+    fn test_is_unshredded_variant() {
+        assert!(is_unshredded_variant(&StructType::new(
+            [
+                StructField::nullable("value", DataType::BINARY),
+                StructField::nullable("metadata", DataType::BINARY)
+                    .with_metadata([(VARIANT_METADATA, "true")]),
+            ]
+        )));
+        assert!(!is_unshredded_variant(&StructType::new(
+            [
+                StructField::nullable("value", DataType::BINARY),
+                StructField::nullable("metadata", DataType::BINARY),
+            ]
+        )));
     }
 
     #[test]
