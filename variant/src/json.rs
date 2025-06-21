@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 use std::usize;
-use crate::{memory_allocator, variant_utils};
+use crate::variant_utils;
 use crate::memory_allocator::{MemoryAllocator, SampleMemoryAllocator};
 
 const DEFAULT_SIZE_LIMIT: usize = 16 * 1024 * 1024;
@@ -180,6 +180,16 @@ impl<T: MemoryAllocator> VariantBuilder<T> {
         }
     }
 
+    fn array_header(
+        &self,
+        large_size: bool,
+        offset_size: u8,
+    ) -> u8 {
+        ((large_size as u8) << (variant_utils::BASIC_TYPE_BITS + 2))
+        | ((offset_size - 1) << variant_utils::BASIC_TYPE_BITS)
+        | variant_utils::ARRAY
+    }
+
     fn finish_writing_object(
         &mut self,
         start: usize, fields: &mut Vec<FieldEntry>
@@ -217,38 +227,7 @@ impl<T: MemoryAllocator> VariantBuilder<T> {
         }
         std::mem::drop(borrowed_value);
         self.write_field_ids_and_offsets(id_start, id_size, offset_start, offset_size,
-            fields.as_slice());
-        Ok(())
-    }
-
-    fn write_field_ids_and_offsets(
-        &mut self,
-        id_start: usize,
-        id_size: usize,
-        offset_start: usize,
-        offset_size: usize,
-        fields: &[FieldEntry],
-    ) {
-        let mut id_itr = id_start;
-        let mut offset_itr = offset_start;
-        for field in fields {
-            let mut borrowed_value = self.value.borrow_mut();
-            borrowed_value[id_itr..id_itr + id_size]
-                .copy_from_slice(&(field.id).to_le_bytes()[..id_size]);
-            borrowed_value[offset_itr..offset_itr + id_size]
-                .copy_from_slice(&(field.offset).to_le_bytes()[..offset_size]);
-            id_itr += id_size;
-            offset_itr += offset_size;
-        }
-    }
-
-    fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
-        self.write_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
-        Ok(())
-    }
-
-    fn write_short_string_header(&mut self, size: u8) -> Result<(), Box<dyn Error>> {
-        self.write_bytes(&[(size << 2) | variant_utils::SHORT_STR])?;
+            data_size, fields.as_slice());
         Ok(())
     }
 
@@ -264,14 +243,38 @@ impl<T: MemoryAllocator> VariantBuilder<T> {
         | variant_utils::OBJECT
     }
 
-    fn array_header(
-        &self,
-        large_size: bool,
-        offset_size: u8,
-    ) -> u8 {
-        ((large_size as u8) << (variant_utils::BASIC_TYPE_BITS + 2))
-        | ((offset_size - 1) << variant_utils::BASIC_TYPE_BITS)
-        | variant_utils::ARRAY
+    fn write_field_ids_and_offsets(
+        &mut self,
+        id_start: usize,
+        id_size: usize,
+        offset_start: usize,
+        offset_size: usize,
+        data_size: usize,
+        fields: &[FieldEntry],
+    ) {
+        let mut id_itr = id_start;
+        let mut offset_itr = offset_start;
+        let mut borrowed_value = self.value.borrow_mut();
+        for field in fields {
+            borrowed_value[id_itr..id_itr + id_size]
+                .copy_from_slice(&(field.id).to_le_bytes()[..id_size]);
+            borrowed_value[offset_itr..offset_itr + offset_size]
+                .copy_from_slice(&(field.offset).to_le_bytes()[..offset_size]);
+            id_itr += id_size;
+            offset_itr += offset_size;
+        }
+        borrowed_value[offset_itr..offset_itr + id_size]
+            .copy_from_slice(&(data_size).to_le_bytes()[..offset_size]);
+    }
+
+    fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
+        self.write_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
+        Ok(())
+    }
+
+    fn write_short_string_header(&mut self, size: u8) -> Result<(), Box<dyn Error>> {
+        self.write_bytes(&[(size << 2) | variant_utils::SHORT_STR])?;
+        Ok(())
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
@@ -385,9 +388,9 @@ mod tests {
         compare_results(" -32767431  ", &[20u8, 57u8, 2u8, 12u8, 254u8])?;
         compare_results("92842754201389",
             &[24u8, 45u8, 87u8, 98u8, 163u8, 112u8, 84u8, 0u8, 0u8])?;
-        // Decimals (including large integers)
+        // TODO: Decimals (including large integers)
 
-        // Floating point numbers
+        // TODO: Floating point numbers
 
         // short strings
         // random short string
@@ -417,17 +420,69 @@ mod tests {
         )?;
 
         // arrays
+        // u8 offset
         compare_results(
             "[127, 128, -32767431]",
             &[3u8, 3u8, 0u8, 2u8, 5u8, 10u8, 12u8, 127u8, 16u8, 128u8, 0u8, 20u8, 57u8, 2u8, 12u8, 254u8]
         )?;
-
         compare_results(
             "[[\"a\", null, true, 4], 128, false]",
             &[3u8, 3u8, 0u8, 13u8, 16u8, 17u8, 3u8, 4u8, 0u8, 2u8, 3u8, 4u8, 6u8, 5u8, 97u8, 0u8, 4u8, 12u8, 4u8, 16u8, 128u8, 0u8, 8u8]
         )?;
+        // u16 offset - 128 i8's + 1 "true" = 257 bytes
+        compare_results(
+            &format!("[{} true]", std::iter::repeat("1, ").take(128).collect::<String>()),
+            &[7u8, 129u8,
+            0, 0, 2, 0, 4, 0, 6, 0, 8, 0, 10, 0, 12, 0, 14, 0,
+            16, 0, 18, 0, 20, 0, 22, 0, 24, 0, 26, 0, 28, 0, 30, 0,
+            32, 0, 34, 0, 36, 0, 38, 0, 40, 0, 42, 0, 44, 0, 46, 0,
+            48, 0, 50, 0, 52, 0, 54, 0, 56, 0, 58, 0, 60, 0, 62, 0,
+            64, 0, 66, 0, 68, 0, 70, 0, 72, 0, 74, 0, 76, 0, 78, 0,
+            80, 0, 82, 0, 84, 0, 86, 0, 88, 0, 90, 0, 92, 0, 94, 0,
+            96, 0, 98, 0, 100, 0, 102, 0, 104, 0, 106, 0, 108, 0, 110, 0,
+            112, 0, 114, 0, 116, 0, 118, 0, 120, 0, 122, 0, 124, 0, 126, 0,
+            128, 0, 130, 0, 132, 0, 134, 0, 136, 0, 138, 0, 140, 0, 142, 0,
+            144, 0, 146, 0, 148, 0, 150, 0, 152, 0, 154, 0, 156, 0, 158, 0,
+            160, 0, 162, 0, 164, 0, 166, 0, 168, 0, 170, 0, 172, 0, 174, 0,
+            176, 0, 178, 0, 180, 0, 182, 0, 184, 0, 186, 0, 188, 0, 190, 0,
+            192, 0, 194, 0, 196, 0, 198, 0, 200, 0, 202, 0, 204, 0, 206, 0,
+            208, 0, 210, 0, 212, 0, 214, 0, 216, 0, 218, 0, 220, 0, 222, 0,
+            224, 0, 226, 0, 228, 0, 230, 0, 232, 0, 234, 0, 236, 0, 238, 0,
+            240, 0, 242, 0, 244, 0, 246, 0, 248, 0, 250, 0, 252, 0, 254, 0,
+            0, 1, 1, 1,    // Final offset is 257
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
+            4u8]
+        )?;
+        // TODO - verify u24, and large_size, maybe just check the size and some random bytes in
+        // these cases
 
         // objects
+        compare_results(
+            "{\"b\": 2, \"a\": 1, \"a\": 3}",
+            &[2u8, 2u8, 1u8, 0u8, 2u8, 0u8, 4u8, 12u8, 2u8, 12u8, 3u8]
+        )?;
+        compare_results(
+            "{\"numbers\": [4, 3, 1], \"null\": null, \"booleans\": [true, false]}",
+            &[2u8, 3u8, 2u8, 1u8, 0u8, 13u8, 12u8, 0u8, 20u8,
+            3u8, 3u8, 0u8, 2u8, 4u8, 6u8, 12u8, 4u8, 12u8, 3u8, 12u8, 1u8,
+            0u8,
+            3u8, 2u8, 0u8, 1u8, 2u8, 4u8, 8u8,]
+        )?;
 
         Ok(())
     }
