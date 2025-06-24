@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::error::Error;
-use std::rc::Rc;
 
 pub trait MemoryAllocator {
     /// Returns the slice where value needs to be written to. This method may be called several
@@ -22,7 +20,7 @@ pub struct SampleMemoryAllocator {
 
 impl MemoryAllocator for SampleMemoryAllocator {
     fn borrow_value_buffer(&mut self) -> &mut [u8] {
-        return &mut *self.value_buffer;
+        &mut self.value_buffer
     }
 
     fn ensure_value_buffer_size(&mut self, size: usize) -> Result<(), Box<dyn Error>> {

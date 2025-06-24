@@ -14,6 +14,10 @@ pub const INT8: u8 = 6;
 
 pub const DOUBLE: u8 = 7;
 
+pub const DECIMAL4: u8 = 8;
+pub const DECIMAL8: u8 = 9;
+pub const DECIMAL16: u8 = 10;
+
 pub const LONG_STR: u8 = 16;
 
 pub const MAX_PRECISION_DECIMAL_16: u8 = 38;
@@ -30,3 +34,8 @@ pub const U8_MAX: u8 = 0xFF;
 pub const U16_MAX: u16 = 0xFFFF;
 
 pub const BASIC_TYPE_BITS: u8 = 2;
+
+pub const MAX_UNSCALED_DECIMAL_4: i32 = 999999999;
+pub const MAX_PRECISION_DECIMAL_4: u8 = 9;
+pub const MAX_UNSCALED_DECIMAL_8: i64 = 999999999999999999i64;
+pub const MAX_PRECISION_DECIMAL_8: u8 = 18;
