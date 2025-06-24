@@ -577,10 +577,11 @@ mod tests {
             &[2u8, 2u8, 1u8, 0u8, 2u8, 0u8, 4u8, 12u8, 2u8, 12u8, 3u8],
         )?;
         compare_results(
-            "{\"numbers\": [4, 3, 1], \"null\": null, \"booleans\": [true, false]}",
+            "{\"numbers\": [4, -3e0, 1.001], \"null\": null, \"booleans\": [true, false]}",
             &[
-                2u8, 3u8, 2u8, 1u8, 0u8, 13u8, 12u8, 0u8, 20u8, 3u8, 3u8, 0u8, 2u8, 4u8, 6u8, 12u8,
-                4u8, 12u8, 3u8, 12u8, 1u8, 0u8, 3u8, 2u8, 0u8, 1u8, 2u8, 4u8, 8u8,
+                2u8, 3u8, 2u8, 1u8, 0u8, 24u8, 23u8, 0u8, 31u8, 3u8, 3u8, 0u8, 2u8, 11u8, 17u8,
+                12u8, 4u8, 28u8, 0, 0, 0, 0, 0, 0, 0x08, 0xc0, 32u8, 3, 0xe9, 0x03, 0, 0, 0, 3u8,
+                2u8, 0u8, 1u8, 2u8, 4u8, 8u8,
             ],
         )?;
 
