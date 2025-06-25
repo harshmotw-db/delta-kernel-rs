@@ -1,8 +1,8 @@
 //! Provide C FFI bindings for the delta_kernel crate
 
-pub mod json;
-pub mod variant_buffer_manager;
-pub(crate) mod variant_utils;
+mod json;
+mod variant_buffer_manager;
+mod variant_utils;
 
 pub use json::json_to_variant;
 pub use variant_buffer_manager::VariantBufferManager;
