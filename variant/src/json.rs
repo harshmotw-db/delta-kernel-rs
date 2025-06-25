@@ -1,7 +1,7 @@
 //! Tools for working with JSON strings and Variants
 
 use crate::memory_allocator::MemoryAllocator;
-use crate::variant_utils::{self, MAX_PRECISION_DECIMAL_4};
+use crate::variant_utils;
 use rust_decimal::prelude::*;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -158,8 +158,8 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
 
     fn append_double(&mut self, f: f64) -> Result<(), Box<dyn Error>> {
         self.check_capacity(1 + 8)?;
-        self.write_primitive_header(variant_utils::DOUBLE);
-        self.write_bytes(&f.to_le_bytes());
+        self.write_primitive_header(variant_utils::DOUBLE)?;
+        self.write_bytes(&f.to_le_bytes())?;
         Ok(())
     }
 
@@ -568,8 +568,47 @@ mod tests {
                 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 4u8,
             ],
         )?;
-        // TODO - verify u24, and large_size, maybe just check the size and some random bytes in
-        // these cases
+        // verify u24, and large_size
+        {
+            let null_array: [u8; 513] = std::array::from_fn(|i| {
+                match i {
+                    0 => 3u8,
+                    1 => 255u8,
+                    j => if j <= 257 {
+                        (j - 2) as u8
+                    } else {
+                        0u8
+                    }
+                }
+            });
+            // 256 elements => large size
+            // each element is an array of 256 nulls => u24 offset
+            let mut whole_array: [u8; 5 + 3 * 257 + 256 * 513] = std::array::from_fn(|i| {
+                match i {
+                    0 => 0x1Bu8,
+                    1 => 0u8,
+                    2 => 1u8,
+                    3 => 0u8,
+                    4 => 0u8,
+                    _ => 0
+                }
+            });
+            for i in 0..257 {
+                let cur_idx = 5 + i * 3 as usize;
+                let cur_offset: usize = i * 513;
+                whole_array[cur_idx..cur_idx + 3].copy_from_slice(&cur_offset.to_le_bytes()[..3]);
+                if i != 256 {
+                    let abs_offset = 5 + 3 * 257 + cur_offset;
+                    whole_array[abs_offset..abs_offset + 513].copy_from_slice(&null_array);
+                }
+            }
+            let intermediate = format!("[{}]", vec!["null"; 255].join(", "));
+            let json = format!("[{}]", vec![intermediate; 256].join(", "));
+            compare_results(
+                json.as_str(),
+                &whole_array,
+            )?;
+        }
 
         // objects
         compare_results(
@@ -584,6 +623,7 @@ mod tests {
                 2u8, 0u8, 1u8, 2u8, 4u8, 8u8,
             ],
         )?;
+        // TODO: verify different offset_size, id_size and is_large values
 
         Ok(())
     }

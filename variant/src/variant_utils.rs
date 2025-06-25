@@ -20,8 +20,6 @@ pub const DECIMAL16: u8 = 10;
 
 pub const LONG_STR: u8 = 16;
 
-pub const MAX_PRECISION_DECIMAL_16: u8 = 38;
-
 pub const MAX_SHORT_STR_SIZE: u8 = 0x3F;
 
 pub const U8_SIZE: u8 = 1;
