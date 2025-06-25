@@ -1,6 +1,6 @@
 use std::error::Error;
 
-pub trait MemoryAllocator {
+pub trait VariantBufferManager {
     /// Returns the slice where value needs to be written to. This method may be called several
     /// times during the construction of a new `value` field in a variant. The implementation must
     /// make sure that on every call, all the data written to the value buffer written so far are
@@ -14,11 +14,11 @@ pub trait MemoryAllocator {
     fn ensure_value_buffer_size(&mut self, size: usize) -> Result<(), Box<dyn Error>>;
 }
 
-pub struct SampleMemoryAllocator {
+pub struct SampleVariantBufferManager {
     pub value_buffer: Box<[u8]>,
 }
 
-impl MemoryAllocator for SampleMemoryAllocator {
+impl VariantBufferManager for SampleVariantBufferManager {
     fn borrow_value_buffer(&mut self) -> &mut [u8] {
         &mut self.value_buffer
     }
@@ -33,14 +33,4 @@ impl MemoryAllocator for SampleMemoryAllocator {
         }
         Ok(())
     }
-
-    // fn get_buffer(&mut self, size: usize) -> Result<&mut [u8], Box<dyn Error>> {
-    //     let cur_len = self.buffer.len();
-    //     if size > cur_len {
-    //         // reallocate buffer
-    //         let new_buffer = vec![0u8; size].into_boxed_slice();
-    //         self.buffer = new_buffer;
-    //     }
-    //     Ok(&mut *self.buffer)
-    // }
 }

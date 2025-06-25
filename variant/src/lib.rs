@@ -1,5 +1,5 @@
 //! Provide C FFI bindings for the delta_kernel crate
 
 pub mod json;
-pub mod memory_allocator;
+pub mod variant_buffer_manager;
 pub(crate) mod variant_utils;

@@ -1,6 +1,6 @@
 //! Tools for working with JSON strings and Variants
 
-use crate::memory_allocator::MemoryAllocator;
+use crate::variant_buffer_manager::VariantBufferManager;
 use crate::variant_utils;
 use rust_decimal::prelude::*;
 use serde_json::Value;
@@ -9,11 +9,11 @@ use std::error::Error;
 
 const DEFAULT_SIZE_LIMIT: usize = 16 * 1024 * 1024;
 
-struct VariantBuilder<'a, T: MemoryAllocator> {
+struct VariantBuilder<'a, T: VariantBufferManager> {
     size: usize,
     size_limit: usize,
     dictionary: HashMap<String, usize>,
-    memory_allocator: &'a mut T,
+    variant_buffer_manager: &'a mut T,
 }
 
 struct FieldEntry<'a> {
@@ -22,7 +22,7 @@ struct FieldEntry<'a> {
     offset: usize,
 }
 
-impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
+impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
     fn build(&mut self, json: &Value) -> Result<(), Box<dyn Error>> {
         match json {
             Value::Null => self.append_null(),
@@ -89,11 +89,11 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
             // TODO: Formalize this error.
             return Err("Variant size limit exceeded.".into());
         }
-        let cur_len = self.memory_allocator.borrow_value_buffer().len();
+        let cur_len = self.variant_buffer_manager.borrow_value_buffer().len();
         if required > cur_len {
             // Need to get new buffer
             let new_size = required.next_power_of_two();
-            self.memory_allocator.ensure_value_buffer_size(new_size)?;
+            self.variant_buffer_manager.ensure_value_buffer_size(new_size)?;
         }
         Ok(())
     }
@@ -200,7 +200,7 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
         self.check_capacity(header_size)?;
         self.shift_bytes(start + header_size, start, start + data_size)?;
         let offset_start = start + 1 + size_bytes;
-        let value_buffer = self.memory_allocator.borrow_value_buffer();
+        let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         value_buffer[start] = Self::array_header(large_size, offset_size as u8);
         value_buffer[start + 1..offset_start]
             .copy_from_slice(&num_offsets.to_le_bytes()[..size_bytes]);
@@ -257,7 +257,7 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
         let header_size = 1 + size_bytes + num_fields * id_size + (num_fields + 1) * offset_size;
         self.check_capacity(header_size)?;
         self.shift_bytes(start + header_size, start, start + data_size)?;
-        let value_buffer = self.memory_allocator.borrow_value_buffer();
+        let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         value_buffer[start] = Self::object_header(large_size, id_size as u8, offset_size as u8);
         let id_start = start + 1 + size_bytes;
         let offset_start = id_start + num_fields * id_size;
@@ -295,7 +295,7 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
     ) {
         let mut id_itr = id_start;
         let mut offset_itr = offset_start;
-        let value_buffer = self.memory_allocator.borrow_value_buffer();
+        let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         for field in fields {
             value_buffer[id_itr..id_itr + id_size]
                 .copy_from_slice(&(field.id).to_le_bytes()[..id_size]);
@@ -319,7 +319,7 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-        let value_buffer = self.memory_allocator.borrow_value_buffer();
+        let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         if self.size + bytes.len() > value_buffer.len() {
             // Formalize this error
             return Err(
@@ -338,7 +338,7 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
         end: usize,
     ) -> Result<(), Box<dyn Error>> {
         let additional = new_start - start;
-        let borrowed_value = self.memory_allocator.borrow_value_buffer();
+        let borrowed_value = self.variant_buffer_manager.borrow_value_buffer();
         if self.size + additional > borrowed_value.len() {
             return Err("Buffer size limit exceeded".into());
         }
@@ -359,11 +359,11 @@ impl<'a, T: MemoryAllocator> VariantBuilder<'a, T> {
 }
 
 /// Constructs a variant representation from a json string `json` (assumed to be valid utf-8) and
-/// writes the "value" and "metadata" fields of the variant into `value` and `metadata` buffers
-/// respectively.
-pub fn json_to_variant<T: MemoryAllocator>(
+/// writes the "value" and "metadata" fields of the variant into value and metadata buffers provided
+/// by `variant_buffer_manager`
+pub fn json_to_variant<T: VariantBufferManager>(
     json: &str,
-    memory_allocator: &mut T,
+    variant_buffer_manager: &mut T,
     value_size: &mut usize,
 ) -> Result<(), Box<dyn Error>> {
     let json: Value = serde_json::from_str(json)?;
@@ -372,7 +372,7 @@ pub fn json_to_variant<T: MemoryAllocator>(
         size: 0,
         dictionary: HashMap::new(),
         size_limit: DEFAULT_SIZE_LIMIT,
-        memory_allocator,
+        variant_buffer_manager,
     };
     vb.build(&json)?;
     *value_size = vb.size;
@@ -382,7 +382,7 @@ pub fn json_to_variant<T: MemoryAllocator>(
 #[cfg(test)]
 mod tests {
     use crate::json::json_to_variant;
-    use crate::memory_allocator::SampleMemoryAllocator;
+    use crate::variant_buffer_manager::SampleVariantBufferManager;
     use std::error::Error;
 
     #[test]
@@ -391,11 +391,11 @@ mod tests {
             let json = json;
             let mut value_size: usize = 0;
 
-            let mut memory_allocator = SampleMemoryAllocator {
+            let mut variant_buffer_manager = SampleVariantBufferManager {
                 value_buffer: vec![0u8; 1].into_boxed_slice(),
             };
-            json_to_variant(json, &mut memory_allocator, &mut value_size)?;
-            let computed_slize: &[u8] = &*memory_allocator.value_buffer;
+            json_to_variant(json, &mut variant_buffer_manager, &mut value_size)?;
+            let computed_slize: &[u8] = &*variant_buffer_manager.value_buffer;
             assert_eq!(&computed_slize[..value_size], expected_value);
             Ok(())
         }
