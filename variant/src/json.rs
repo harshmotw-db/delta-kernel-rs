@@ -94,8 +94,9 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
 
     fn build_metadata(&mut self) -> Result<(), Box<dyn Error>> {
         let num_keys = self.dictionary.len();
+        // In rust, key.len() returns the number of bytes not characters
         let dictionary_string_size: usize =
-            self.dictionary.keys().map(|key| key.as_bytes().len()).sum();
+            self.dictionary.keys().map(|key| key.len()).sum();
         let max_size = std::cmp::max(num_keys, dictionary_string_size);
         if max_size > self.size_limit {
             return Err("Variant metadata exceeds size limit".into());
@@ -118,8 +119,9 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         let mut offset_itr = offset_start;
         let mut string_itr = string_start;
         let mut current_offset: usize = 0;
+        // In rust, key.len() returns the number of bytes not characters.
         for key in self.dictionary.keys() {
-            let key_len = key.as_bytes().len();
+            let key_len = key.len();
             metadata_buffer[offset_itr..offset_itr + offset_size]
                 .copy_from_slice(&current_offset.to_le_bytes()[..offset_size]);
             metadata_buffer[string_itr..string_itr + key_len].copy_from_slice(key.as_bytes());
