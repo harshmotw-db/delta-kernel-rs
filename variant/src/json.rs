@@ -2,17 +2,20 @@
 
 use crate::variant_buffer_manager::VariantBufferManager;
 use crate::variant_utils;
+use indexmap::IndexMap;
 use rust_decimal::prelude::*;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::error::Error;
 
 const DEFAULT_SIZE_LIMIT: usize = 16 * 1024 * 1024;
 
 struct VariantBuilder<'a, T: VariantBufferManager> {
-    size: usize,
+    value_size: usize,
+    metadata_size: usize,
     size_limit: usize,
-    dictionary: HashMap<String, usize>,
+    // We use index map to preserve the order of insertion since the order of insertion determines
+    // key ID
+    dictionary: IndexMap<String, usize>,
     variant_buffer_manager: &'a mut T,
 }
 
@@ -24,6 +27,12 @@ struct FieldEntry<'a> {
 
 impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
     fn build(&mut self, json: &Value) -> Result<(), Box<dyn Error>> {
+        self.build_value(json)?;
+        self.build_metadata()?;
+        Ok(())
+    }
+
+    fn build_value(&mut self, json: &Value) -> Result<(), Box<dyn Error>> {
         match json {
             Value::Null => self.append_null(),
             Value::Bool(b) => self.append_boolean(*b),
@@ -55,10 +64,10 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
                 Ok(())
             }
             Value::Array(arr) => {
-                let start = self.size;
+                let start = self.value_size;
                 let mut offsets = Vec::<usize>::new();
                 for v in arr {
-                    offsets.push(self.size - start);
+                    offsets.push(self.value_size - start);
                     self.build(v)?;
                 }
                 self.finish_writing_array(start, &mut offsets)?;
@@ -66,13 +75,13 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
             }
             Value::Object(mp) => {
                 let mut fields = Vec::<FieldEntry>::new();
-                let start = self.size;
+                let start = self.value_size;
                 for (k, v) in mp.iter() {
                     let id = self.add_key(k);
                     fields.push(FieldEntry {
                         key: k,
                         id,
-                        offset: self.size - start,
+                        offset: self.value_size - start,
                     });
                     self.build(v)?;
                 }
@@ -83,8 +92,48 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         Ok(())
     }
 
+    fn build_metadata(&mut self) -> Result<(), Box<dyn Error>> {
+        let num_keys = self.dictionary.len();
+        let dictionary_string_size: usize =
+            self.dictionary.keys().map(|key| key.as_bytes().len()).sum();
+        let max_size = std::cmp::max(num_keys, dictionary_string_size);
+        if max_size > self.size_limit {
+            return Err("Variant metadata exceeds size limit".into());
+        }
+        let offset_size = Self::get_integer_size(max_size);
+        let offset_start = 1 + offset_size;
+        let string_start = offset_start + (num_keys + 1) * offset_size;
+        let metadata_size = string_start + dictionary_string_size;
+        if metadata_size > self.size_limit {
+            return Err("Variant metadata exceeds size limit".into());
+        }
+        self.metadata_size = metadata_size;
+        self.variant_buffer_manager
+            .ensure_metadata_buffer_size(metadata_size)?;
+        let metadata_buffer = self.variant_buffer_manager.borrow_metadata_buffer();
+        let header_byte: u8 = variant_utils::VERSION | ((offset_size as u8 - 1) << 6);
+        metadata_buffer[0] = header_byte;
+        metadata_buffer[1..1 + offset_size]
+            .copy_from_slice(&num_keys.to_le_bytes()[0..offset_size]);
+        let mut offset_itr = offset_start;
+        let mut string_itr = string_start;
+        let mut current_offset: usize = 0;
+        for key in self.dictionary.keys() {
+            let key_len = key.as_bytes().len();
+            metadata_buffer[offset_itr..offset_itr + offset_size]
+                .copy_from_slice(&current_offset.to_le_bytes()[..offset_size]);
+            metadata_buffer[string_itr..string_itr + key_len].copy_from_slice(key.as_bytes());
+            offset_itr += offset_size;
+            current_offset += key_len;
+            string_itr += key_len;
+        }
+        metadata_buffer[offset_itr..offset_itr + offset_size]
+            .copy_from_slice(&current_offset.to_le_bytes()[..offset_size]);
+        Ok(())
+    }
+
     fn check_capacity(&mut self, additional: usize) -> Result<(), Box<dyn Error>> {
-        let required = self.size + additional;
+        let required = self.value_size + additional;
         if required > self.size_limit {
             // TODO: Formalize this error.
             return Err("Variant size limit exceeded.".into());
@@ -93,7 +142,8 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         if required > cur_len {
             // Need to get new buffer
             let new_size = required.next_power_of_two();
-            self.variant_buffer_manager.ensure_value_buffer_size(new_size)?;
+            self.variant_buffer_manager
+                .ensure_value_buffer_size(new_size)?;
         }
         Ok(())
     }
@@ -118,16 +168,16 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         self.check_capacity(1 + variant_utils::U64_SIZE as usize)?;
         if i as i8 as i64 == i {
             self.write_primitive_header(variant_utils::INT1)?;
-            self.write_bytes(&(i as i8).to_le_bytes())?;
+            self.write_value_bytes(&(i as i8).to_le_bytes())?;
         } else if i as i16 as i64 == i {
             self.write_primitive_header(variant_utils::INT2)?;
-            self.write_bytes(&(i as i16).to_le_bytes())?;
+            self.write_value_bytes(&(i as i16).to_le_bytes())?;
         } else if i as i32 as i64 == i {
             self.write_primitive_header(variant_utils::INT4)?;
-            self.write_bytes(&(i as i32).to_le_bytes())?;
+            self.write_value_bytes(&(i as i32).to_le_bytes())?;
         } else {
             self.write_primitive_header(variant_utils::INT8)?;
-            self.write_bytes(&(i).to_le_bytes())?;
+            self.write_value_bytes(&(i).to_le_bytes())?;
         }
         Ok(())
     }
@@ -140,18 +190,18 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
             && scale <= variant_utils::MAX_PRECISION_DECIMAL_4
         {
             self.write_primitive_header(variant_utils::DECIMAL4)?;
-            self.write_bytes(&(scale).to_le_bytes())?;
-            self.write_bytes(&(unscaled as i32).to_le_bytes())?;
+            self.write_value_bytes(&(scale).to_le_bytes())?;
+            self.write_value_bytes(&(unscaled as i32).to_le_bytes())?;
         } else if unscaled.abs() <= variant_utils::MAX_UNSCALED_DECIMAL_8 as i128
             && scale <= variant_utils::MAX_PRECISION_DECIMAL_8
         {
             self.write_primitive_header(variant_utils::DECIMAL8)?;
-            self.write_bytes(&(scale).to_le_bytes())?;
-            self.write_bytes(&(unscaled as i64).to_le_bytes())?;
+            self.write_value_bytes(&(scale).to_le_bytes())?;
+            self.write_value_bytes(&(unscaled as i64).to_le_bytes())?;
         } else {
             self.write_primitive_header(variant_utils::DECIMAL16)?;
-            self.write_bytes(&(scale).to_le_bytes())?;
-            self.write_bytes(&unscaled.to_le_bytes())?;
+            self.write_value_bytes(&(scale).to_le_bytes())?;
+            self.write_value_bytes(&unscaled.to_le_bytes())?;
         }
         Ok(())
     }
@@ -159,7 +209,7 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
     fn append_double(&mut self, f: f64) -> Result<(), Box<dyn Error>> {
         self.check_capacity(1 + 8)?;
         self.write_primitive_header(variant_utils::DOUBLE)?;
-        self.write_bytes(&f.to_le_bytes())?;
+        self.write_value_bytes(&f.to_le_bytes())?;
         Ok(())
     }
 
@@ -174,11 +224,11 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         self.check_capacity(additional + bytes.len())?;
         if long_str {
             self.write_primitive_header(variant_utils::LONG_STR)?;
-            self.write_bytes(&(s.len() as u32).to_le_bytes())?;
+            self.write_value_bytes(&(s.len() as u32).to_le_bytes())?;
         } else {
             self.write_short_string_header(bytes.len() as u8)?;
         }
-        self.write_bytes(bytes)?;
+        self.write_value_bytes(bytes)?;
         Ok(())
     }
 
@@ -187,7 +237,7 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         start: usize,
         offsets: &mut Vec<usize>,
     ) -> Result<(), Box<dyn Error>> {
-        let data_size = self.size - start;
+        let data_size = self.value_size - start;
         let num_offsets = offsets.len();
         let large_size = num_offsets > variant_utils::U8_MAX as usize;
         let size_bytes = if large_size {
@@ -195,10 +245,10 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
         } else {
             variant_utils::U8_SIZE as usize
         };
-        let offset_size = self.get_integer_size(data_size);
+        let offset_size = Self::get_integer_size(data_size);
         let header_size = 1 + size_bytes + (num_offsets + 1) * offset_size;
         self.check_capacity(header_size)?;
-        self.shift_bytes(start + header_size, start, start + data_size)?;
+        self.shift_value_bytes(start + header_size, start, start + data_size)?;
         let offset_start = start + 1 + size_bytes;
         let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         value_buffer[start] = Self::array_header(large_size, offset_size as u8);
@@ -245,18 +295,18 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
                 max_id = field.id;
             }
         }
-        let data_size = self.size - start;
+        let data_size = self.value_size - start;
         let large_size = num_fields > variant_utils::U8_MAX as usize;
         let size_bytes: usize = if large_size {
             variant_utils::U32_SIZE as usize
         } else {
             variant_utils::U8_SIZE as usize
         };
-        let id_size = self.get_integer_size(max_id);
-        let offset_size = self.get_integer_size(data_size);
+        let id_size = Self::get_integer_size(max_id);
+        let offset_size = Self::get_integer_size(data_size);
         let header_size = 1 + size_bytes + num_fields * id_size + (num_fields + 1) * offset_size;
         self.check_capacity(header_size)?;
-        self.shift_bytes(start + header_size, start, start + data_size)?;
+        self.shift_value_bytes(start + header_size, start, start + data_size)?;
         let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
         value_buffer[start] = Self::object_header(large_size, id_size as u8, offset_size as u8);
         let id_start = start + 1 + size_bytes;
@@ -284,6 +334,16 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
             | variant_utils::OBJECT
     }
 
+    fn get_integer_size(value: usize) -> usize {
+        if value <= variant_utils::U8_MAX as usize {
+            return variant_utils::U8_SIZE as usize;
+        }
+        if value <= variant_utils::U16_MAX as usize {
+            return variant_utils::U16_SIZE as usize;
+        }
+        variant_utils::U24_SIZE as usize
+    }
+
     fn write_field_ids_and_offsets(
         &mut self,
         id_start: usize,
@@ -309,29 +369,29 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
     }
 
     fn write_primitive_header(&mut self, typ: u8) -> Result<(), Box<dyn Error>> {
-        self.write_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
+        self.write_value_bytes(&[(typ << 2) | variant_utils::PRIMITIVE])?;
         Ok(())
     }
 
     fn write_short_string_header(&mut self, size: u8) -> Result<(), Box<dyn Error>> {
-        self.write_bytes(&[(size << 2) | variant_utils::SHORT_STR])?;
+        self.write_value_bytes(&[(size << 2) | variant_utils::SHORT_STR])?;
         Ok(())
     }
 
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+    fn write_value_bytes(&mut self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
         let value_buffer = self.variant_buffer_manager.borrow_value_buffer();
-        if self.size + bytes.len() > value_buffer.len() {
+        if self.value_size + bytes.len() > value_buffer.len() {
             // Formalize this error
             return Err(
                 "Buffer size insufficient. There might be a bug in the memory allocator.".into(),
             );
         }
-        value_buffer[self.size..self.size + bytes.len()].copy_from_slice(bytes);
-        self.size += bytes.len();
+        value_buffer[self.value_size..self.value_size + bytes.len()].copy_from_slice(bytes);
+        self.value_size += bytes.len();
         Ok(())
     }
 
-    fn shift_bytes(
+    fn shift_value_bytes(
         &mut self,
         new_start: usize,
         start: usize,
@@ -339,22 +399,12 @@ impl<'a, T: VariantBufferManager> VariantBuilder<'a, T> {
     ) -> Result<(), Box<dyn Error>> {
         let additional = new_start - start;
         let borrowed_value = self.variant_buffer_manager.borrow_value_buffer();
-        if self.size + additional > borrowed_value.len() {
+        if self.value_size + additional > borrowed_value.len() {
             return Err("Buffer size limit exceeded".into());
         }
         borrowed_value.copy_within(start..end, new_start);
-        self.size += additional;
+        self.value_size += additional;
         Ok(())
-    }
-
-    fn get_integer_size(&self, value: usize) -> usize {
-        if value <= variant_utils::U8_MAX as usize {
-            return variant_utils::U8_SIZE as usize;
-        }
-        if value <= variant_utils::U16_MAX as usize {
-            return variant_utils::U16_SIZE as usize;
-        }
-        variant_utils::U24_SIZE as usize
     }
 }
 
@@ -365,17 +415,20 @@ pub fn json_to_variant<T: VariantBufferManager>(
     json: &str,
     variant_buffer_manager: &mut T,
     value_size: &mut usize,
+    metadata_size: &mut usize,
 ) -> Result<(), Box<dyn Error>> {
     let json: Value = serde_json::from_str(json)?;
 
     let mut vb = VariantBuilder {
-        size: 0,
-        dictionary: HashMap::new(),
+        value_size: 0,
+        metadata_size: 0,
+        dictionary: IndexMap::new(),
         size_limit: DEFAULT_SIZE_LIMIT,
         variant_buffer_manager,
     };
     vb.build(&json)?;
-    *value_size = vb.size;
+    *value_size = vb.value_size;
+    *metadata_size = vb.metadata_size;
     Ok(())
 }
 
@@ -387,64 +440,107 @@ mod tests {
 
     #[test]
     fn test_json_to_variant() -> Result<(), Box<dyn Error>> {
-        fn compare_results(json: &str, expected_value: &[u8]) -> Result<(), Box<dyn Error>> {
+        fn compare_results(
+            json: &str,
+            expected_value: &[u8],
+            expected_metadata: &[u8],
+        ) -> Result<(), Box<dyn Error>> {
             let json = json;
             let mut value_size: usize = 0;
+            let mut metadata_size: usize = 0;
 
             let mut variant_buffer_manager = SampleVariantBufferManager {
                 value_buffer: vec![0u8; 1].into_boxed_slice(),
+                metadata_buffer: vec![0u8; 1].into_boxed_slice(),
             };
-            json_to_variant(json, &mut variant_buffer_manager, &mut value_size)?;
-            let computed_slize: &[u8] = &*variant_buffer_manager.value_buffer;
-            assert_eq!(&computed_slize[..value_size], expected_value);
+            json_to_variant(
+                json,
+                &mut variant_buffer_manager,
+                &mut value_size,
+                &mut metadata_size,
+            )?;
+            let computed_value_slize: &[u8] = &*variant_buffer_manager.value_buffer;
+            let computed_metadata_slize: &[u8] = &*variant_buffer_manager.metadata_buffer;
+            assert_eq!(&computed_value_slize[..value_size], expected_value);
+            assert_eq!(&computed_metadata_slize[..metadata_size], expected_metadata);
             Ok(())
         }
 
+        let empty_metadata: &[u8] = &[1u8, 0u8, 0u8];
         // Null
-        compare_results("null", &[0u8])?;
+        compare_results("null", &[0u8], empty_metadata)?;
         // Bool
-        compare_results("true", &[4u8])?;
-        compare_results("false", &[8u8])?;
+        compare_results("true", &[4u8], empty_metadata)?;
+        compare_results("false", &[8u8], empty_metadata)?;
         // Integers
-        compare_results("  127 ", &[12u8, 127u8])?;
-        compare_results("  -128  ", &[12u8, 128u8])?;
-        compare_results(" 27134  ", &[16u8, 254u8, 105u8])?;
-        compare_results(" -32767431  ", &[20u8, 57u8, 2u8, 12u8, 254u8])?;
+        compare_results("  127 ", &[12u8, 127u8], empty_metadata)?;
+        compare_results("  -128  ", &[12u8, 128u8], empty_metadata)?;
+        compare_results(" 27134  ", &[16u8, 254u8, 105u8], empty_metadata)?;
+        compare_results(
+            " -32767431  ",
+            &[20u8, 57u8, 2u8, 12u8, 254u8],
+            empty_metadata,
+        )?;
         compare_results(
             "92842754201389",
             &[24u8, 45u8, 87u8, 98u8, 163u8, 112u8, 84u8, 0u8, 0u8],
+            empty_metadata,
         )?;
         // Decimals
         // Decimal 4
-        compare_results("1.23", &[32u8, 2u8, 123u8, 0u8, 0u8, 0u8])?;
-        compare_results("99999999.9", &[32u8, 1u8, 0xffu8, 0xc9u8, 0x9au8, 0x3bu8])?;
-        compare_results("-99999999.9", &[32u8, 1u8, 1u8, 0x36u8, 0x65u8, 0xc4u8])?;
-        compare_results("0.999999999", &[32u8, 9u8, 0xffu8, 0xc9u8, 0x9au8, 0x3bu8])?;
-        compare_results("0.000000001", &[32u8, 9u8, 1u8, 0, 0, 0])?;
-        compare_results("-0.999999999", &[32u8, 9u8, 1u8, 0x36u8, 0x65u8, 0xc4u8])?;
-        compare_results("-0.000000001", &[32u8, 9u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8])?;
+        compare_results("1.23", &[32u8, 2u8, 123u8, 0u8, 0u8, 0u8], empty_metadata)?;
+        compare_results(
+            "99999999.9",
+            &[32u8, 1u8, 0xffu8, 0xc9u8, 0x9au8, 0x3bu8],
+            empty_metadata,
+        )?;
+        compare_results(
+            "-99999999.9",
+            &[32u8, 1u8, 1u8, 0x36u8, 0x65u8, 0xc4u8],
+            empty_metadata,
+        )?;
+        compare_results(
+            "0.999999999",
+            &[32u8, 9u8, 0xffu8, 0xc9u8, 0x9au8, 0x3bu8],
+            empty_metadata,
+        )?;
+        compare_results("0.000000001", &[32u8, 9u8, 1u8, 0, 0, 0], empty_metadata)?;
+        compare_results(
+            "-0.999999999",
+            &[32u8, 9u8, 1u8, 0x36u8, 0x65u8, 0xc4u8],
+            empty_metadata,
+        )?;
+        compare_results(
+            "-0.000000001",
+            &[32u8, 9u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8],
+            empty_metadata,
+        )?;
         // Decimal 8
         compare_results(
             "999999999.0",
             &[36u8, 1u8, 0xf6u8, 0xe3u8, 0x0bu8, 0x54u8, 0x02u8, 0, 0, 0],
+            empty_metadata,
         )?;
         compare_results(
             "-999999999.0",
             &[
                 36u8, 1u8, 0x0au8, 0x1cu8, 0xf4u8, 0xabu8, 0xfdu8, 0xffu8, 0xffu8, 0xffu8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "0.999999999999999999",
             &[
                 36u8, 18u8, 0xffu8, 0xffu8, 0x63u8, 0xa7u8, 0xb3u8, 0xb6u8, 0xe0u8, 0x0du8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "-9999999999999999.99",
             &[
                 36u8, 2u8, 0x01u8, 0x00u8, 0x9cu8, 0x58u8, 0x4cu8, 0x49u8, 0x1fu8, 0xf2u8,
             ],
+            empty_metadata,
         )?;
         // Decimal 16
         compare_results(
@@ -453,6 +549,7 @@ mod tests {
                 40u8, 0u8, 0xffu8, 0xffu8, 0xe7u8, 0x89u8, 4u8, 0x23u8, 0xc7u8, 0x8au8, 0u8, 0u8,
                 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "0.9999999999999999999",
@@ -460,6 +557,7 @@ mod tests {
                 40u8, 19u8, 0xffu8, 0xffu8, 0xe7u8, 0x89u8, 4u8, 0x23u8, 0xc7u8, 0x8au8, 0u8, 0u8,
                 0u8, 0u8, 0u8, 0u8, 0u8, 0u8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "79228162514264337593543950335", // 2 ^ 96 - 1
@@ -467,6 +565,7 @@ mod tests {
                 40u8, 0u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8,
                 0xffu8, 0xffu8, 0xffu8, 0u8, 0u8, 0u8, 0u8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "7.9228162514264337593543950335", // using scale higher than this falls into double
@@ -475,19 +574,32 @@ mod tests {
                 40u8, 28u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8,
                 0xffu8, 0xffu8, 0xffu8, 0u8, 0u8, 0u8, 0u8,
             ],
+            empty_metadata,
         )?;
         // Double
         {
             let mut arr = [28u8; 9];
             arr[1..].copy_from_slice(&0.79228162514264337593543950335f64.to_le_bytes());
-            compare_results("0.79228162514264337593543950335", &arr)?;
+            compare_results("0.79228162514264337593543950335", &arr, empty_metadata)?;
         }
-        compare_results("15e-1", &[28u8, 0, 0, 0, 0, 0, 0, 0xf8, 0x3fu8])?;
-        compare_results("-15e-1", &[28u8, 0, 0, 0, 0, 0, 0, 0xf8, 0xBfu8])?;
+        compare_results(
+            "15e-1",
+            &[28u8, 0, 0, 0, 0, 0, 0, 0xf8, 0x3fu8],
+            empty_metadata,
+        )?;
+        compare_results(
+            "-15e-1",
+            &[28u8, 0, 0, 0, 0, 0, 0, 0xf8, 0xBfu8],
+            empty_metadata,
+        )?;
 
         // short strings
         // random short string
-        compare_results("\"harsh\"", &[21u8, 104u8, 97u8, 114u8, 115u8, 104u8])?;
+        compare_results(
+            "\"harsh\"",
+            &[21u8, 104u8, 97u8, 114u8, 115u8, 104u8],
+            empty_metadata,
+        )?;
         // longest short string
         let mut expected = [97u8; 64];
         expected[0] = 253u8;
@@ -497,6 +609,7 @@ mod tests {
                 std::iter::repeat('a').take(63).collect::<String>()
             ),
             &expected,
+            empty_metadata,
         )?;
         // long strings
         let mut expected = [97u8; 69];
@@ -507,6 +620,7 @@ mod tests {
                 std::iter::repeat('a').take(64).collect::<String>()
             ),
             &expected,
+            empty_metadata,
         )?;
         let mut expected = [98u8; 100005];
         expected[0] = 64u8;
@@ -517,6 +631,7 @@ mod tests {
                 std::iter::repeat('b').take(100000).collect::<String>()
             ),
             &expected,
+            empty_metadata,
         )?;
 
         // arrays
@@ -527,6 +642,7 @@ mod tests {
                 3u8, 3u8, 0u8, 2u8, 5u8, 10u8, 12u8, 127u8, 16u8, 128u8, 0u8, 20u8, 57u8, 2u8,
                 12u8, 254u8,
             ],
+            empty_metadata,
         )?;
         compare_results(
             "[[\"a\", null, true, 4], 128, false]",
@@ -534,6 +650,7 @@ mod tests {
                 3u8, 3u8, 0u8, 13u8, 16u8, 17u8, 3u8, 4u8, 0u8, 2u8, 3u8, 4u8, 6u8, 5u8, 97u8, 0u8,
                 4u8, 12u8, 4u8, 16u8, 128u8, 0u8, 8u8,
             ],
+            empty_metadata,
         )?;
         // u16 offset - 128 i8's + 1 "true" = 257 bytes
         compare_results(
@@ -567,14 +684,15 @@ mod tests {
                 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1,
                 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 12, 1, 4u8,
             ],
+            empty_metadata,
         )?;
         // verify u24, and large_size
         {
-            let null_array: [u8; 513] = std::array::from_fn(|i| {
-                match i {
-                    0 => 3u8,
-                    1 => 255u8,
-                    j => if j <= 257 {
+            let null_array: [u8; 513] = std::array::from_fn(|i| match i {
+                0 => 3u8,
+                1 => 255u8,
+                j => {
+                    if j <= 257 {
                         (j - 2) as u8
                     } else {
                         0u8
@@ -583,15 +701,13 @@ mod tests {
             });
             // 256 elements => large size
             // each element is an array of 256 nulls => u24 offset
-            let mut whole_array: [u8; 5 + 3 * 257 + 256 * 513] = std::array::from_fn(|i| {
-                match i {
-                    0 => 0x1Bu8,
-                    1 => 0u8,
-                    2 => 1u8,
-                    3 => 0u8,
-                    4 => 0u8,
-                    _ => 0
-                }
+            let mut whole_array: [u8; 5 + 3 * 257 + 256 * 513] = std::array::from_fn(|i| match i {
+                0 => 0x1Bu8,
+                1 => 0u8,
+                2 => 1u8,
+                3 => 0u8,
+                4 => 0u8,
+                _ => 0,
             });
             for i in 0..257 {
                 let cur_idx = 5 + i * 3 as usize;
@@ -604,16 +720,14 @@ mod tests {
             }
             let intermediate = format!("[{}]", vec!["null"; 255].join(", "));
             let json = format!("[{}]", vec![intermediate; 256].join(", "));
-            compare_results(
-                json.as_str(),
-                &whole_array,
-            )?;
+            compare_results(json.as_str(), &whole_array, empty_metadata)?;
         }
 
         // objects
         compare_results(
             "{\"b\": 2, \"a\": 1, \"a\": 3}",
             &[2u8, 2u8, 1u8, 0u8, 2u8, 0u8, 4u8, 12u8, 2u8, 12u8, 3u8],
+            &[1, 2, 0, 1, 2, 98u8, 97u8],
         )?;
         compare_results(
             "{\"numbers\": [4, -3e0, 1.001], \"null\": null, \"booleans\": [true, false]}",
@@ -622,8 +736,14 @@ mod tests {
                 12u8, 4u8, 28u8, 0, 0, 0, 0, 0, 0, 0x08, 0xc0, 32u8, 3, 0xe9, 0x03, 0, 0, 0, 3u8,
                 2u8, 0u8, 1u8, 2u8, 4u8, 8u8,
             ],
+            &[
+                1u8, 3u8, 0u8, 7u8, 11u8, 19u8, 0x6eu8, 0x75u8, 0x6du8, 0x62u8, 0x65u8, 0x72u8,
+                0x73u8, 0x6eu8, 0x75u8, 0x6cu8, 0x6cu8, 0x62u8, 0x6fu8, 0x6fu8, 0x6cu8, 0x65u8,
+                0x61u8, 0x6eu8, 0x73u8,
+            ],
         )?;
-        // TODO: verify different offset_size, id_size and is_large values
+        // TODO: verify different offset_size, id_size, is_large values, nesting and more object
+        // tests in general
 
         Ok(())
     }
