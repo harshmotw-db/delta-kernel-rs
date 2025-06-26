@@ -187,19 +187,15 @@ mod tests {
 
     #[test]
     fn test_is_unshredded_variant() {
-        assert!(is_unshredded_variant(&StructType::new(
-            [
-                StructField::nullable("value", DataType::BINARY),
-                StructField::nullable("metadata", DataType::BINARY)
-                    .with_metadata([(VARIANT_METADATA, "true")]),
-            ]
-        )));
-        assert!(!is_unshredded_variant(&StructType::new(
-            [
-                StructField::nullable("value", DataType::BINARY),
-                StructField::nullable("metadata", DataType::BINARY),
-            ]
-        )));
+        assert!(is_unshredded_variant(&StructType::new([
+            StructField::nullable("value", DataType::BINARY),
+            StructField::nullable("metadata", DataType::BINARY)
+                .with_metadata([(VARIANT_METADATA, "true")]),
+        ])));
+        assert!(!is_unshredded_variant(&StructType::new([
+            StructField::nullable("value", DataType::BINARY),
+            StructField::nullable("metadata", DataType::BINARY),
+        ])));
     }
 
     #[test]
