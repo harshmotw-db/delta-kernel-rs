@@ -260,7 +260,7 @@ impl Scalar {
                     builder.append(false)?;
                 }
             }
-            DataType::Variant(_) => {
+            DataType::Primitive(PrimitiveType::Variant(_)) => {
                 return Err::<(), Error>(Error::unsupported(
                     "Variant is not supported as scalar yet.",
                 ));

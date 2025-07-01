@@ -9,7 +9,7 @@ use crate::engine::ensure_data_types::DataTypeCompat;
 use crate::schema::variant_utils::unshredded_variant_schema;
 use crate::{
     engine::arrow_data::ArrowEngineData,
-    schema::{DataType, Schema, SchemaRef, StructField, StructType},
+    schema::{DataType, PrimitiveType, Schema, SchemaRef, StructField, StructType},
     utils::require,
     DeltaResult, EngineData, Error,
 };
@@ -317,12 +317,15 @@ fn get_indices(
         if let Some((index, _, requested_field)) = field_info {
             // If the field is a variant, make sure the parquet schema matches the unshredded variant
             // representation. This is to ensure that shredded reads are not performed.
-            if requested_field.data_type == unshredded_variant_schema() {
+            if requested_field.data_type == DataType::Primitive(unshredded_variant_schema()) {
                 validate_parquet_variant(field)?;
             }
             match field.data_type() {
                 ArrowDataType::Struct(fields) => {
-                    if let DataType::Struct(ref requested_schema) | DataType::Variant(ref requested_schema) = requested_field.data_type {
+                    if let DataType::Struct(ref requested_schema)
+                    | DataType::Primitive(PrimitiveType::Variant(ref requested_schema)) =
+                        requested_field.data_type
+                    {
                         let (parquet_advance, children) = get_indices(
                             parquet_index + parquet_offset,
                             requested_schema.as_ref(),
@@ -972,7 +975,7 @@ mod tests {
         // Array of Variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "array_v",
-            ArrayType::new(unshredded_variant_schema(), true),
+            ArrayType::new(unshredded_variant_schema().into(), true),
         )]));
         let unshredded_parquet_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "array_v",

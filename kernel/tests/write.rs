@@ -19,7 +19,7 @@ use serde_json::Deserializer;
 use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::engine::arrow_utils::variant_arrow_type;
-use delta_kernel::schema::variant_utils::{unshredded_variant_schema};
+use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
 use delta_kernel::DeltaResult;
 use delta_kernel::Error as KernelError;
@@ -368,7 +368,6 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
             )?),
             &table,
             engine,
-            None,
         )?;
     }
     Ok(())
@@ -514,7 +513,6 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
             )?),
             &table,
             engine,
-            None,
         )?;
     }
     Ok(())
@@ -794,7 +792,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     assert!(parsed_commits[1].get("add").is_some());
 
     // Verify the data can be read back correctly
-    test_read(&ArrowEngineData::new(data), &table, engine, None)?;
+    test_read(&ArrowEngineData::new(data), &table, engine)?;
 
     Ok(())
 }
@@ -814,9 +812,12 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             .add_metadata([("delta.columnMapping.id", 2)]),
         StructField::nullable(
             "nested",
-            StructType::new(vec![StructField::nullable("nested_v", unshredded_variant_schema())
-                .with_metadata([("delta.columnMapping.physicalName", "col21")])
-                .add_metadata([("delta.columnMapping.id", 3)])]),
+            StructType::new(vec![StructField::nullable(
+                "nested_v",
+                unshredded_variant_schema(),
+            )
+            .with_metadata([("delta.columnMapping.physicalName", "col21")])
+            .add_metadata([("delta.columnMapping.id", 3)])]),
         )
         .with_metadata([("delta.columnMapping.physicalName", "col3")])
         .add_metadata([("delta.columnMapping.id", 4)]),
@@ -827,7 +828,10 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         StructField::nullable("col2", DataType::INTEGER),
         StructField::nullable(
             "col3",
-            StructType::new(vec![StructField::nullable("col21", unshredded_variant_schema())]),
+            StructType::new(vec![StructField::nullable(
+                "col21",
+                unshredded_variant_schema(),
+            )]),
         ),
     ]));
 
@@ -959,34 +963,16 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
 
-    // Verify that `VARIANT` cannot be provided as read schema.
-    let invalid_read = test_read(
-        &ArrowEngineData::new(data.clone()),
-        &table,
-        engine.clone(),
-        None,
-    );
-    assert!(invalid_read.is_err());
-    assert!(invalid_read
-        .unwrap_err()
-        .to_string()
-        .contains("The logical schema must not contain `VARIANT`."));
-
-    let schema_dt: DataType = (*table_schema).clone().into();
-
-    // The logical read schema
-    let read_schema = match schema_dt {
-        DataType::Struct(struc) => Ok((*struc).clone()),
-        _ => Err(KernelError::Generic("Schema is not Struct!!!".to_string())),
-    }?;
-
     // The scanned data will match the logical schema, not the physical one
     let expected_schema = Arc::new(StructType::new(vec![
         StructField::nullable("v", unshredded_variant_schema()),
         StructField::nullable("i", DataType::INTEGER),
         StructField::nullable(
             "nested",
-            StructType::new(vec![StructField::nullable("nested_v", unshredded_variant_schema())]),
+            StructType::new(vec![StructField::nullable(
+                "nested_v",
+                unshredded_variant_schema(),
+            )]),
         ),
     ]));
     let expected_data = RecordBatch::try_new(
@@ -1006,12 +992,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    test_read(
-        &ArrowEngineData::new(expected_data),
-        &table,
-        engine,
-        Some(Arc::new(read_schema)),
-    )?;
+    test_read(&ArrowEngineData::new(expected_data), &table, engine)?;
 
     Ok(())
 }

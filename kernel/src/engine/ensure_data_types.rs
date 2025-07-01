@@ -5,7 +5,10 @@ use std::{
     ops::Deref,
 };
 
-use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+use crate::{
+    arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField},
+    schema::PrimitiveType,
+};
 use itertools::Itertools;
 
 use super::arrow_conversion::TryIntoArrow as _;
@@ -63,6 +66,9 @@ impl EnsureDataTypes {
     ) -> DeltaResult<DataTypeCompat> {
         match (kernel_type, arrow_type) {
             (DataType::Primitive(_), _) if arrow_type.is_primitive() => {
+                check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
+            }
+            (&DataType::Primitive(PrimitiveType::Variant(_)), _) => {
                 check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
             // strings, bools, and binary  aren't primitive in arrow
@@ -126,9 +132,6 @@ impl EnsureDataTypes {
                     ))
                 });
                 Ok(DataTypeCompat::Nested)
-            }
-            (&DataType::Variant(_), _) => {
-                check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
             _ => Err(make_arrow_error(format!(
                 "Incorrect datatype. Expected {}, got {}",
@@ -335,11 +338,14 @@ mod tests {
             ArrowDataType::Struct(fields.into())
         }
 
-        assert!(
-            ensure_data_types(&unshredded_variant_schema(), &variant_arrow_type(), true).is_ok()
-        );
         assert!(ensure_data_types(
-            &unshredded_variant_schema(),
+            &unshredded_variant_schema().into(),
+            &variant_arrow_type(),
+            true
+        )
+        .is_ok());
+        assert!(ensure_data_types(
+            &unshredded_variant_schema().into(),
             &variant_arrow_type_without_tag(),
             true
         )

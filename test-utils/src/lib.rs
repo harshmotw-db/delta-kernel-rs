@@ -380,13 +380,9 @@ pub fn test_read(
     expected: &ArrowEngineData,
     table: &Table,
     engine: Arc<dyn Engine>,
-    schema: Option<SchemaRef>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let snapshot = table.snapshot(engine.as_ref(), None)?;
-    let scan = snapshot
-        .into_scan_builder()
-        .with_schema_opt(schema)
-        .build()?;
+    let scan = snapshot.into_scan_builder().build()?;
     let batches = read_scan(&scan, engine)?;
     let formatted = pretty_format_batches(&batches).unwrap().to_string();
 

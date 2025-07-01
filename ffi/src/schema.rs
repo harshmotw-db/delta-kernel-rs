@@ -312,12 +312,10 @@ fn visit_schema_impl(schema: &StructType, visitor: &mut EngineSchemaVisitor) -> 
             DataType::Array(at) => {
                 call!(visit_array, visit_array_item(visitor, at, at.contains_null))
             }
-            // Currently, support for iterating through the nested fields of a variant hasn't been
-            // implemented. The implementation should be similar to Struct.
-            DataType::Variant(_) => call!(visit_variant),
             DataType::Primitive(PrimitiveType::Decimal(d)) => {
                 call!(visit_decimal, d.precision(), d.scale())
             }
+            DataType::Primitive(PrimitiveType::Variant(_)) => call!(visit_variant),
             &DataType::STRING => call!(visit_string),
             &DataType::LONG => call!(visit_long),
             &DataType::INTEGER => call!(visit_integer),
