@@ -566,7 +566,6 @@ pub enum PrimitiveType {
     Boolean,
     Binary,
     Date,
-    Variant,
     /// Microsecond precision timestamp, adjusted to UTC.
     Timestamp,
     #[serde(rename = "timestamp_ntz")]
@@ -636,7 +635,6 @@ impl Display for PrimitiveType {
             PrimitiveType::Decimal(dtype) => {
                 write!(f, "decimal({},{})", dtype.precision(), dtype.scale())
             }
-            PrimitiveType::Variant => write!(f, "variant"),
         }
     }
 }
@@ -644,6 +642,9 @@ impl Display for PrimitiveType {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq)]
 #[serde(untagged, rename_all = "camelCase")]
 pub enum DataType {
+    /// The variant type with support for complex read schemas that would eventually be used to
+    /// extract nested shredded data.
+    Variant(Box<StructType>),
     /// UTF-8 encoded string of characters
     Primitive(PrimitiveType),
     /// An array stores a variable length collection of items of some type.
@@ -709,7 +710,6 @@ impl DataType {
     pub const DATE: Self = DataType::Primitive(PrimitiveType::Date);
     pub const TIMESTAMP: Self = DataType::Primitive(PrimitiveType::Timestamp);
     pub const TIMESTAMP_NTZ: Self = DataType::Primitive(PrimitiveType::TimestampNtz);
-    pub const VARIANT: Self = DataType::Primitive(PrimitiveType::Variant);
 
     pub fn decimal(precision: u8, scale: u8) -> DeltaResult<Self> {
         Ok(PrimitiveType::decimal(precision, scale)?.into())
@@ -728,6 +728,10 @@ impl DataType {
         fields: impl IntoIterator<Item = Result<StructField, E>>,
     ) -> Result<Self, E> {
         Ok(StructType::try_new(fields)?.into())
+    }
+
+    pub fn variant_type(fields: impl IntoIterator<Item = StructField>) -> Self {
+        DataType::Variant(Box::new(StructType::new(fields)))
     }
 
     pub fn as_primitive_opt(&self) -> Option<&PrimitiveType> {
@@ -754,6 +758,7 @@ impl Display for DataType {
                 write!(f, ">")
             }
             DataType::Map(m) => write!(f, "map<{}, {}>", m.key_type, m.value_type),
+            DataType::Variant(_) => write!(f, "variant"),
         }
     }
 }
@@ -775,24 +780,9 @@ impl Display for DataType {
 /// child schema elements of each schema element. Implementations can call these as needed but will
 /// generally not need to override them.
 pub trait SchemaTransform<'a> {
-    /// Decides whether to transform primitives using `transform_primitive` or
-    /// `transform_primitive_to_data_type`.
-    fn should_transform_primitive_to_data_type(&self) -> bool {
-        false
-    }
-
     /// Called for each primitive encountered during the schema traversal.
     fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
         Some(Cow::Borrowed(ptype))
-    }
-
-    /// Called for each primitive encountered during the schema traversal. Allows for primitive type
-    /// to be transformed to non-primitive data type.
-    fn transform_primitive_to_data_type(
-        &mut self,
-        ptype: &'a PrimitiveType,
-    ) -> Option<Cow<'a, DataType>> {
-        Some(Cow::Owned(DataType::Primitive(ptype.clone())))
     }
 
     /// Called for each struct encountered during the schema traversal. Implementations can call
@@ -839,6 +829,11 @@ pub trait SchemaTransform<'a> {
         self.transform(etype)
     }
 
+    // Currently there is no need to recurse within a variant. The variant is returned as is.
+    fn transform_variant(&mut self, vtype: &'a DataType) -> Option<Cow<'a, DataType>> {
+        Some(Cow::Borrowed(vtype))
+    }
+
     /// General entry point for a recursive traversal over any data type. Also invoked internally to
     /// dispatch on nested data types encountered during the traversal.
     fn transform(&mut self, data_type: &'a DataType) -> Option<Cow<'a, DataType>> {
@@ -856,16 +851,11 @@ pub trait SchemaTransform<'a> {
             };
         }
         match data_type {
-            Primitive(ptype) => {
-                if self.should_transform_primitive_to_data_type() {
-                    apply_transform!(transform_primitive_to_data_type, ptype)
-                } else {
-                    apply_transform!(transform_primitive, ptype)
-                }
-            }
+            Primitive(ptype) => apply_transform!(transform_primitive, ptype),
             Array(atype) => apply_transform!(transform_array, atype),
             Struct(stype) => apply_transform!(transform_struct, stype),
             Map(mtype) => apply_transform!(transform_map, mtype),
+            Variant(_) => apply_transform!(transform_variant, data_type),
         }
     }
 
@@ -1045,6 +1035,8 @@ impl<'a> SchemaTransform<'a> for SchemaDepthChecker {
 
 #[cfg(test)]
 mod tests {
+    use crate::schema::variant_utils::unshredded_variant_schema;
+
     use super::*;
     use serde_json;
 
@@ -1153,7 +1145,7 @@ mod tests {
         }
         "#;
         let field: StructField = serde_json::from_str(data).unwrap();
-        assert_eq!(field.data_type, DataType::VARIANT);
+        assert_eq!(field.data_type, unshredded_variant_schema());
 
         let json_str = serde_json::to_string(&field).unwrap();
         assert_eq!(

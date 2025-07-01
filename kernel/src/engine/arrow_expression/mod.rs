@@ -222,11 +222,6 @@ impl Scalar {
             DataType::Primitive(PrimitiveType::Decimal(_)) => {
                 append_null_as!(array::Decimal128Builder)
             }
-            DataType::VARIANT => {
-                return Err::<(), Error>(Error::unsupported(
-                    "Variant is not supported as scalar yet.",
-                ));
-            }
             DataType::Struct(ref stype) => {
                 // WARNING: Unlike ArrayBuilder and MapBuilder, StructBuilder always requires us to
                 // insert an entry for each child builder, even when we're inserting NULL.
@@ -264,6 +259,11 @@ impl Scalar {
                 for _ in 0..num_rows {
                     builder.append(false)?;
                 }
+            }
+            DataType::Variant(_) => {
+                return Err::<(), Error>(Error::unsupported(
+                    "Variant is not supported as scalar yet.",
+                ));
             }
         }
         Ok(())

@@ -1,12 +1,12 @@
 //! Some utilities for working with arrow data types
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
 use crate::engine::arrow_conversion::{TryFromKernel as _, TryIntoArrow as _};
 use crate::engine::ensure_data_types::DataTypeCompat;
-use crate::schema::variant_utils::unshredded_variant_struct_schema;
+use crate::schema::variant_utils::unshredded_variant_schema;
 use crate::{
     engine::arrow_data::ArrowEngineData,
     schema::{DataType, Schema, SchemaRef, StructField, StructType},
@@ -317,12 +317,12 @@ fn get_indices(
         if let Some((index, _, requested_field)) = field_info {
             // If the field is a variant, make sure the parquet schema matches the unshredded variant
             // representation. This is to ensure that shredded reads are not performed.
-            if requested_field.data_type == unshredded_variant_struct_schema() {
+            if requested_field.data_type == unshredded_variant_schema() {
                 validate_parquet_variant(field)?;
             }
             match field.data_type() {
                 ArrowDataType::Struct(fields) => {
-                    if let DataType::Struct(ref requested_schema) = requested_field.data_type {
+                    if let DataType::Struct(ref requested_schema) | DataType::Variant(ref requested_schema) = requested_field.data_type {
                         let (parquet_advance, children) = get_indices(
                             parquet_index + parquet_offset,
                             requested_schema.as_ref(),
@@ -784,7 +784,14 @@ pub(crate) fn to_json_bytes(
 /// The variant type for arrow is a struct where where the `metadata` field is tagged with some
 /// additional metadata saying `__VARIANT__ = true`.
 pub fn variant_arrow_type() -> ArrowDataType {
-    ArrowDataType::try_from_kernel(&unshredded_variant_struct_schema()).unwrap()
+    let mut tag = HashMap::new();
+    tag.insert("__VARIANT__".to_string(), "true".to_string());
+
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field =
+        ArrowField::new("metadata", ArrowDataType::Binary, true).with_metadata(tag);
+    let fields = vec![value_field, metadata_field];
+    ArrowDataType::Struct(fields.into())
 }
 
 #[cfg(test)]
@@ -928,7 +935,7 @@ mod tests {
         // Top level variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "v",
-            unshredded_variant_struct_schema(),
+            unshredded_variant_schema(),
         )]));
         let unshredded_parquet_schema =
             Arc::new(ArrowSchema::new(vec![unshredded_variant_parquet_schema()]));
@@ -936,18 +943,15 @@ mod tests {
             Arc::new(ArrowSchema::new(vec![shredded_variant_parquet_schema()]));
         let result_unshredded =
             get_requested_indices(&requested_schema, &unshredded_parquet_schema);
-        let result_shredded = get_requested_indices(&requested_schema, &shredded_parquet_schema);
         assert!(result_unshredded.is_ok());
+        let result_shredded = get_requested_indices(&requested_schema, &shredded_parquet_schema);
         assert!(matches!(result_shredded,
             Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
 
         // Struct of Variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "struct_v",
-            StructType::new([StructField::nullable(
-                "v",
-                unshredded_variant_struct_schema(),
-            )]),
+            StructType::new([StructField::nullable("v", unshredded_variant_schema())]),
         )]));
         let unshredded_parquet_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "struct_v",
@@ -968,7 +972,7 @@ mod tests {
         // Array of Variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "array_v",
-            ArrayType::new(unshredded_variant_struct_schema(), true),
+            ArrayType::new(unshredded_variant_schema(), true),
         )]));
         let unshredded_parquet_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "array_v",
@@ -990,7 +994,7 @@ mod tests {
         // Map of Variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "map_v",
-            MapType::new(DataType::STRING, unshredded_variant_struct_schema(), true),
+            MapType::new(DataType::STRING, unshredded_variant_schema(), true),
         )]));
         let unshredded_parquet_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new_map(
             "map_v",
