@@ -577,14 +577,6 @@ pub enum PrimitiveType {
         untagged
     )]
     Decimal(DecimalType),
-    /// The Variant data type. While Variant may have a flexible physical representation to
-    /// facilitate shredded reads, it is a primitive type from a logical perspective.
-    #[serde(
-        serialize_with = "serialize_variant",
-        deserialize_with = "deserialize_variant",
-        untagged
-    )]
-    Variant(Box<StructType>),
 }
 
 impl PrimitiveType {
@@ -643,7 +635,7 @@ where
         serde::de::Error::custom(format!("Invalid variant: {}", str_value))
     );
     match unshredded_variant_schema() {
-        PrimitiveType::Variant(st) => Ok(st),
+        DataType::Variant(st) => Ok(st),
         _ => Err(serde::de::Error::custom(
             "Issue in unshredded_variant_schema(). Please contact support.",
         )),
@@ -668,9 +660,6 @@ impl Display for PrimitiveType {
             PrimitiveType::Decimal(dtype) => {
                 write!(f, "decimal({},{})", dtype.precision(), dtype.scale())
             }
-            PrimitiveType::Variant(_) => {
-                write!(f, "variant")
-            }
         }
     }
 }
@@ -688,6 +677,14 @@ pub enum DataType {
     /// A map stores an arbitrary length collection of key-value pairs
     /// with a single keyType and a single valueType
     Map(Box<MapType>),
+    /// The Variant data type. While Variant may have a flexible physical representation to
+    /// facilitate shredded reads, it is a primitive type from a logical perspective.
+    #[serde(
+        serialize_with = "serialize_variant",
+        deserialize_with = "deserialize_variant",
+        untagged
+    )]
+    Variant(Box<StructType>),
 }
 
 impl From<DecimalType> for PrimitiveType {
@@ -763,8 +760,8 @@ impl DataType {
         Ok(StructType::try_new(fields)?.into())
     }
 
-    pub fn variant_type(fields: impl IntoIterator<Item = StructField>) -> PrimitiveType {
-        PrimitiveType::Variant(Box::new(StructType::new(fields)))
+    pub fn variant_type(fields: impl IntoIterator<Item = StructField>) -> Self {
+        DataType::Variant(Box::new(StructType::new(fields)))
     }
 
     pub fn as_primitive_opt(&self) -> Option<&PrimitiveType> {
@@ -791,6 +788,7 @@ impl Display for DataType {
                 write!(f, ">")
             }
             DataType::Map(m) => write!(f, "map<{}, {}>", m.key_type, m.value_type),
+            DataType::Variant(_) => write!(f, "variant"),
         }
     }
 }
@@ -861,6 +859,11 @@ pub trait SchemaTransform<'a> {
         self.transform(etype)
     }
 
+    /// Called for each variant values encountered. By default does nothing
+    fn transform_variant(&mut self, etype: &'a DataType) -> Option<Cow<'a, DataType>> {
+        Some(Cow::Borrowed(etype))
+    }
+
     /// General entry point for a recursive traversal over any data type. Also invoked internally to
     /// dispatch on nested data types encountered during the traversal.
     fn transform(&mut self, data_type: &'a DataType) -> Option<Cow<'a, DataType>> {
@@ -882,6 +885,7 @@ pub trait SchemaTransform<'a> {
             Array(atype) => apply_transform!(transform_array, atype),
             Struct(stype) => apply_transform!(transform_struct, stype),
             Map(mtype) => apply_transform!(transform_map, mtype),
+            Variant(_) => apply_transform!(transform_variant, data_type),
         }
     }
 

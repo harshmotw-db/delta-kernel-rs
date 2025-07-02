@@ -5,10 +5,7 @@ use std::{
     ops::Deref,
 };
 
-use crate::{
-    arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField},
-    schema::PrimitiveType,
-};
+use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
 use itertools::Itertools;
 
 use super::arrow_conversion::TryIntoArrow as _;
@@ -68,7 +65,7 @@ impl EnsureDataTypes {
             (DataType::Primitive(_), _) if arrow_type.is_primitive() => {
                 check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
-            (&DataType::Primitive(PrimitiveType::Variant(_)), _) => {
+            (&DataType::Variant(_), _) => {
                 check_cast_compat(kernel_type.try_into_arrow()?, arrow_type)
             }
             // strings, bools, and binary  aren't primitive in arrow

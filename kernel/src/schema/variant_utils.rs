@@ -1,14 +1,14 @@
 //! Utility functions for the variant type and variant-related table features.
 
 use crate::actions::Protocol;
-use crate::schema::{DataType, PrimitiveType, Schema, SchemaTransform, StructField};
+use crate::schema::{DataType, Schema, SchemaTransform, StructField};
 use crate::table_features::{ReaderFeature, WriterFeature};
 use crate::utils::require;
 use crate::{DeltaResult, Error};
 use std::borrow::Cow;
 
 /// Simple API used to obtain the unshredded Variant struct schema
-pub fn unshredded_variant_schema() -> PrimitiveType {
+pub fn unshredded_variant_schema() -> DataType {
     DataType::variant_type([
         StructField::nullable("value", DataType::BINARY),
         StructField::nullable("metadata", DataType::BINARY),
@@ -17,10 +17,7 @@ pub fn unshredded_variant_schema() -> PrimitiveType {
 
 /// Simple API to test if a given DataType refers to an unshredded Variant.
 pub fn is_unshredded_variant(s: &DataType) -> bool {
-    match s {
-        DataType::Primitive(pt) => pt == &unshredded_variant_schema(),
-        _ => false,
-    }
+    s == &unshredded_variant_schema()
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
@@ -28,10 +25,8 @@ pub fn is_unshredded_variant(s: &DataType) -> bool {
 pub(crate) struct UsesVariant(pub(crate) bool);
 
 impl<'a> SchemaTransform<'a> for UsesVariant {
-    fn transform_primitive(&mut self, ptype: &'a PrimitiveType) -> Option<Cow<'a, PrimitiveType>> {
-        if let PrimitiveType::Variant(_) = *ptype {
-            self.0 = true;
-        }
+    fn transform_variant(&mut self, _: &'a DataType) -> Option<Cow<'a, DataType>> {
+        self.0 = true;
         None
     }
 }

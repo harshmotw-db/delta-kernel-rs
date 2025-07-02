@@ -624,8 +624,6 @@ impl PrimitiveType {
                     _ => unreachable!(),
                 }
             }
-            // Scalar Variant is not supported yet.
-            Variant(_) => Err(self.parse_error(raw)),
         }
     }
 
@@ -694,7 +692,6 @@ mod tests {
     use std::f32::consts::PI;
 
     use crate::expressions::{column_expr, BinaryPredicateOp};
-    use crate::schema::variant_utils::unshredded_variant_schema;
     use crate::{Expression as Expr, Predicate as Pred};
 
     use super::*;
@@ -848,16 +845,6 @@ mod tests {
         expect_fail_parse("0.999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999", 1, 0);
         // scale will be too small to fit in i8
         expect_fail_parse("0.E170141183460469231731687303715884105727", 1, 0);
-    }
-
-    #[test]
-    fn test_variant_expect_fail() {
-        let s = unshredded_variant_schema();
-        let res = s.parse_scalar("1");
-        assert!(
-            res.is_err(),
-            "Variant scalar works even though it is not supposed to."
-        );
     }
 
     #[test]

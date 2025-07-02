@@ -217,7 +217,7 @@ fn test_get_stat_values() {
     assert_eq!(
         filter.get_min_stat(
             &column_name!("chrono.date32"),
-            &DataType::Primitive(unshredded_variant_schema())
+            &unshredded_variant_schema()
         ),
         None
     );
@@ -399,7 +399,7 @@ fn test_get_stat_values() {
     assert_eq!(
         filter.get_max_stat(
             &column_name!("chrono.date32"),
-            &DataType::Primitive(unshredded_variant_schema())
+            &unshredded_variant_schema()
         ),
         None
     );

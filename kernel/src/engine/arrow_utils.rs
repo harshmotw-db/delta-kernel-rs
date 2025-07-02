@@ -9,7 +9,7 @@ use crate::engine::ensure_data_types::DataTypeCompat;
 use crate::schema::variant_utils::unshredded_variant_schema;
 use crate::{
     engine::arrow_data::ArrowEngineData,
-    schema::{DataType, PrimitiveType, Schema, SchemaRef, StructField, StructType},
+    schema::{DataType, Schema, SchemaRef, StructField, StructType},
     utils::require,
     DeltaResult, EngineData, Error,
 };
@@ -317,13 +317,13 @@ fn get_indices(
         if let Some((index, _, requested_field)) = field_info {
             // If the field is a variant, make sure the parquet schema matches the unshredded variant
             // representation. This is to ensure that shredded reads are not performed.
-            if requested_field.data_type == DataType::Primitive(unshredded_variant_schema()) {
+            if requested_field.data_type == unshredded_variant_schema() {
                 validate_parquet_variant(field)?;
             }
             match field.data_type() {
                 ArrowDataType::Struct(fields) => {
                     if let DataType::Struct(ref requested_schema)
-                    | DataType::Primitive(PrimitiveType::Variant(ref requested_schema)) =
+                    | DataType::Variant(ref requested_schema) =
                         requested_field.data_type
                     {
                         let (parquet_advance, children) = get_indices(

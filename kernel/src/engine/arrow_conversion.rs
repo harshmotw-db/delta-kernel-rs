@@ -150,17 +150,6 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                     PrimitiveType::TimestampNtz => {
                         Ok(ArrowDataType::Timestamp(TimeUnit::Microsecond, None))
                     }
-                    PrimitiveType::Variant(_) => {
-                        if *p == unshredded_variant_schema() {
-                            Ok(variant_arrow_type())
-                        } else {
-                            // TODO: Test this
-                            Err(ArrowError::SchemaError(format!(
-                                "Incorrect Variant Schema: {}",
-                                t
-                            )))
-                        }
-                    }
                 }
             }
             DataType::Struct(s) => Ok(ArrowDataType::Struct(
@@ -174,6 +163,17 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                 Arc::new(m.as_ref().try_into_arrow()?),
                 false,
             )),
+            DataType::Variant(_) => {
+                if *t == unshredded_variant_schema() {
+                    Ok(variant_arrow_type())
+                } else {
+                    // TODO: Test this
+                    Err(ArrowError::SchemaError(format!(
+                        "Incorrect Variant Schema: {}",
+                        t
+                    )))
+                }
+            }
         }
     }
 }
