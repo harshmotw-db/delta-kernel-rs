@@ -315,7 +315,7 @@ fn visit_schema_impl(schema: &StructType, visitor: &mut EngineSchemaVisitor) -> 
             DataType::Primitive(PrimitiveType::Decimal(d)) => {
                 call!(visit_decimal, d.precision(), d.scale())
             }
-            DataType::Primitive(PrimitiveType::Variant(_)) => call!(visit_variant),
+            &DataType::Variant(_) => call!(visit_variant),
             &DataType::STRING => call!(visit_string),
             &DataType::LONG => call!(visit_long),
             &DataType::INTEGER => call!(visit_integer),
