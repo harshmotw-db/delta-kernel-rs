@@ -637,7 +637,7 @@ where
     match unshredded_variant_schema() {
         DataType::Variant(st) => Ok(st),
         _ => Err(serde::de::Error::custom(
-            "Issue in unshredded_variant_schema(). Please contact support.",
+            "Issue in unshredded_variant_schema(). Please contact Delta Kernel developers.",
         )),
     }
 }
@@ -677,8 +677,9 @@ pub enum DataType {
     /// A map stores an arbitrary length collection of key-value pairs
     /// with a single keyType and a single valueType
     Map(Box<MapType>),
-    /// The Variant data type. While Variant may have a flexible physical representation to
-    /// facilitate shredded reads, it is a primitive type from a logical perspective.
+    /// The Variant data type. While Variant may have a flexible physical representation (assisted
+    /// by StructType) to facilitate shredded reads, it is an atomic type from a logical
+    /// perspective.
     #[serde(
         serialize_with = "serialize_variant",
         deserialize_with = "deserialize_variant",

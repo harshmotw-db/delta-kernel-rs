@@ -187,7 +187,7 @@ pub(crate) static SUPPORTED_READER_FEATURES: LazyLock<Vec<ReaderFeature>> = Lazy
         // The default engine currently DOES NOT support shredded Variant reads and the parquet
         // reader will reject the read if it sees a shredded schema in the parquet file. That being
         // said, kernel does permit reconstructing shredded variants into the
-        // `STRUCT<value: BINARY, metadata: BINARY>` representation if parquet readers of
+        // `STRUCT<metadata: BINARY, value: BINARY>` representation if parquet readers of
         // third-party engines support it.
         ReaderFeature::VariantShreddingPreview,
     ]

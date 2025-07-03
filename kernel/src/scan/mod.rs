@@ -130,7 +130,7 @@ impl ScanBuilder {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum PhysicalPredicate {
+pub(crate) enum PhysicalPredicate {
     Some(PredicateRef, SchemaRef),
     StaticSkipAll,
     None,

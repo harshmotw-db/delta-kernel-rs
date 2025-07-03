@@ -16,7 +16,7 @@ use crate::{
 
 use crate::arrow::array::{
     cast::AsArray, make_array, new_null_array, Array as ArrowArray, GenericListArray,
-    OffsetSizeTrait, RecordBatch, StringArray, StructArray,
+    OffsetSizeTrait, RecordBatch, StringArray, StructArray, BinaryBuilder, BooleanBufferBuilder,
 };
 use crate::arrow::buffer::NullBuffer;
 use crate::arrow::compute::concat_batches;
@@ -26,9 +26,11 @@ use crate::arrow::datatypes::{
 };
 use crate::arrow::json::{LineDelimitedWriter, ReaderBuilder};
 use crate::parquet::{arrow::ProjectionMask, schema::types::SchemaDescriptor};
+use arrow_55::array::ArrayRef;
 use delta_kernel_derive::internal_api;
 use itertools::Itertools;
 use tracing::debug;
+use parquet_variant::{VariantBuilder, json_to_variant};
 
 macro_rules! prim_array_cmp {
     ( $left_arr: ident, $right_arr: ident, $(($data_ty: pat, $prim_ty: ty)),+ ) => {
@@ -260,7 +262,7 @@ fn _count_cols(dt: &ArrowDataType) -> usize {
 }
 
 /// Validate that a given field in a parquet file which is presumed to represent data of the
-/// `VARIANT` type is represented as `STRUCT<value: BINARY, metadata: BINARY>`. This is to make
+/// `VARIANT` type is represented as `STRUCT<metadata: BINARY, value: BINARY>`. This is to make
 /// sure that the default engine does not try to read shredded Variants, which it currently does
 /// not support.
 fn validate_parquet_variant(field: &ArrowField) -> DeltaResult<()> {
@@ -790,11 +792,46 @@ pub fn variant_arrow_type() -> ArrowDataType {
     let mut tag = HashMap::new();
     tag.insert("__VARIANT__".to_string(), "true".to_string());
 
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
     let metadata_field =
         ArrowField::new("metadata", ArrowDataType::Binary, true).with_metadata(tag);
-    let fields = vec![value_field, metadata_field];
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let fields = vec![metadata_field, value_field];
     ArrowDataType::Struct(fields.into())
+}
+
+pub fn json_arrow_to_variant(input: &StringArray) -> Result<StructArray, Error> {
+    let mut value_builder = BinaryBuilder::new();
+    let mut metadata_builder = BinaryBuilder::new();
+    let mut validity = BooleanBufferBuilder::new(input.len());
+    for i in 0..input.len() {
+        if input.is_null(i) {
+            value_builder.append_null();
+            metadata_builder.append_null();
+            validity.append(false);
+        } else {
+            let mut vb = VariantBuilder::new();
+            json_to_variant(input.value(i), &mut vb).map_err(Error::generic_err)?;
+            let (metadata, value) = vb.finish();
+            metadata_builder.append_value(&metadata);
+            value_builder.append_value(&value);
+            validity.append(true);
+        }
+    }
+    let struct_fields: Vec<ArrayRef> = vec![
+        Arc::new(value_builder.finish()),
+        Arc::new(metadata_builder.finish())
+    ];
+    let variant_fields = match variant_arrow_type() {
+        ArrowDataType::Struct(fields) => fields,
+        _ => return Err(Error::generic("Unexpected format of variant_arrow_type."))
+    };
+    let null_buffer = NullBuffer::new(validity.finish());
+    Ok(StructArray::new(
+        variant_fields,
+        struct_fields,
+        Some(null_buffer)
+    ))
+    // json_to_variant(json, builder).map_err(Error::generic_err)
 }
 
 #[cfg(test)]
@@ -802,7 +839,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::arrow::array::{
-        Array, ArrayRef as ArrowArrayRef, BooleanArray, GenericListArray, Int32Array, StructArray,
+        Array, ArrayRef as ArrowArrayRef, BinaryArray, BooleanArray, GenericListArray, Int32Array,
+        StructArray,
     };
     use crate::arrow::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Fields, Schema as ArrowSchema,
@@ -833,6 +871,37 @@ mod tests {
             ),
             ArrowField::new("j", ArrowDataType::Int32, false),
         ]))
+    }
+
+    #[test]
+    fn test_json_arrow_to_variant() {
+
+        let input = StringArray::from(vec![
+            Some("1"),
+            Some("null"),
+            None,
+        ]);
+        let output = json_arrow_to_variant(&input).unwrap();
+
+        let struct_array = &output;
+        let value_array = struct_array.column(0).as_any().downcast_ref::<BinaryArray>().unwrap();
+        let metadata_array = struct_array.column(1).as_any().downcast_ref::<BinaryArray>().unwrap();
+
+        // Assert validity
+        assert_eq!(struct_array.is_null(0), false);
+        assert_eq!(struct_array.is_null(1), false);
+        assert_eq!(struct_array.is_null(2), true);
+
+        // Assert values
+        assert_eq!(metadata_array.value(0), &[1, 0, 0]);
+        assert_eq!(value_array.value(0), &[12, 1]);
+
+        assert_eq!(metadata_array.value(1), &[1, 0, 0]);
+        assert_eq!(value_array.value(1), &[0]);
+
+        // nulls: don't call `.value(2)` on them, just check is_null
+        assert!(metadata_array.is_null(2));
+        assert!(value_array.is_null(2));
     }
 
     #[test]
@@ -913,8 +982,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("metadata", ArrowDataType::Binary, true),
+                        ArrowField::new("value", ArrowDataType::Binary, true),
                     ]
                     .into(),
                 ),
@@ -926,8 +995,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("metadata", ArrowDataType::Binary, true),
+                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("typed_value", ArrowDataType::Int32, true),
                     ]
                     .into(),

@@ -40,7 +40,7 @@ pre-release-hook = [
 delta_kernel_derive = { path = "../derive-macros", version = "0.12.1" }
 bytes = "1.10"
 chrono = "0.4.40"
-indexmap = "2.9.0"
+indexmap = "2.10.0"
 itertools = "0.14"
 roaring = "0.10.12"
 serde = { version = "1", features = ["derive", "rc"] }
@@ -52,6 +52,7 @@ tracing = { version = "0.1", features = ["log"] }
 url = "2"
 uuid = { version = "1.16.0", features = ["v4", "fast-rng"] }
 z85 = "3.0.6"
+parquet_variant = { git = "https://github.com/harshmotw-db/arrow-rs", branch = "harsh-motwani_data/from_json", package = "parquet-variant" }
 
 # optional deps
 futures = { version = "0.3", optional = true }
