@@ -65,16 +65,16 @@ mod tests {
     fn test_is_unshredded_variant() {
         assert!(!is_unshredded_variant(
             &DataType::variant_type([
-                StructField::nullable("value", DataType::BINARY),
                 StructField::nullable("metadata", DataType::BINARY),
+                StructField::nullable("value", DataType::BINARY),
                 StructField::nullable("another_field", DataType::BINARY),
             ])
             .into()
         ));
         assert!(is_unshredded_variant(
             &DataType::variant_type([
-                StructField::nullable("value", DataType::BINARY),
                 StructField::nullable("metadata", DataType::BINARY),
+                StructField::nullable("value", DataType::BINARY),
             ])
             .into()
         ));
