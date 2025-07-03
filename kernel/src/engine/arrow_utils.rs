@@ -260,7 +260,7 @@ fn _count_cols(dt: &ArrowDataType) -> usize {
 }
 
 /// Validate that a given field in a parquet file which is presumed to represent data of the
-/// `VARIANT` type is represented as `STRUCT<value: BINARY, metadata: BINARY>`. This is to make
+/// `VARIANT` type is represented as `STRUCT<metadata: BINARY, value: BINARY>`. This is to make
 /// sure that the default engine does not try to read shredded Variants, which it currently does
 /// not support.
 fn validate_parquet_variant(field: &ArrowField) -> DeltaResult<()> {
@@ -790,10 +790,10 @@ pub fn variant_arrow_type() -> ArrowDataType {
     let mut tag = HashMap::new();
     tag.insert("__VARIANT__".to_string(), "true".to_string());
 
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
     let metadata_field =
         ArrowField::new("metadata", ArrowDataType::Binary, true).with_metadata(tag);
-    let fields = vec![value_field, metadata_field];
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let fields = vec![metadata_field, value_field];
     ArrowDataType::Struct(fields.into())
 }
 
@@ -913,8 +913,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("metadata", ArrowDataType::Binary, true),
+                        ArrowField::new("value", ArrowDataType::Binary, true),
                     ]
                     .into(),
                 ),
@@ -926,8 +926,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("metadata", ArrowDataType::Binary, true),
+                        ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("typed_value", ArrowDataType::Int32, true),
                     ]
                     .into(),

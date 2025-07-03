@@ -856,35 +856,35 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
-    let value_v = vec![
-        Some(&[0x0C, 0x01][..]),
-        None,
-        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
-    ];
     let metadata_v = vec![
         Some(&[0x01, 0x00, 0x00][..]),
         None,
         Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..]),
     ];
+    let value_v = vec![
+        Some(&[0x0C, 0x01][..]),
+        None,
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
+    ];
 
-    let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
     let metadata_v_array = Arc::new(BinaryArray::from(metadata_v)) as ArrayRef;
+    let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
 
     // First value corresponds to the variant value "2". Third value corresponds to the variant
     // representing the JSON Object {"b":3}.
-    let value_nested_v = vec![
-        Some(&[0x0C, 0x02][..]),
-        None,
-        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..]),
-    ];
     let metadata_nested_v = vec![
         Some(&[0x01, 0x00, 0x00][..]),
         None,
         Some(&[0x01, 0x01, 0x00, 0x01, 0x62][..]),
     ];
+    let value_nested_v = vec![
+        Some(&[0x0C, 0x02][..]),
+        None,
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..]),
+    ];
 
-    let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
     let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
+    let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
 
     let variant_arrow = variant_arrow_type();
 
@@ -901,13 +901,13 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let variant_v_array = StructArray::try_new(
         fields.clone(),
-        vec![value_v_array, metadata_v_array],
+        vec![metadata_v_array, value_v_array],
         Some(null_bitmap.clone()),
     )?;
 
     let variant_nested_v_array = Arc::new(StructArray::try_new(
         fields,
-        vec![value_nested_v_array, metadata_nested_v_array],
+        vec![metadata_nested_v_array, value_nested_v_array],
         Some(null_bitmap),
     )?);
 
@@ -1009,13 +1009,13 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     )]));
 
     // The table will be attempted to be written in this form but be read into
-    // STRUCT<value: BINARY, metadata: BINARY>. The read should fail because the default engine
+    // STRUCT<metadata: BINARY, value: BINARY>. The read should fail because the default engine
     // currently does not support shredded reads.
     let shredded_write_schema = Arc::new(StructType::new(vec![StructField::nullable(
         "v",
         DataType::struct_type([
-            StructField::new("value", DataType::BINARY, true),
             StructField::new("metadata", DataType::BINARY, true),
+            StructField::new("value", DataType::BINARY, true),
             StructField::new("typed_value", DataType::INTEGER, true),
         ]),
     )]));
@@ -1041,24 +1041,24 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
-    let value_v = vec![
-        Some(&[0x0C, 0x01][..]),
-        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
-    ];
     let metadata_v = vec![
         Some(&[0x01, 0x00, 0x00][..]),
         Some(&[0x01, 0x01, 0x00, 0x01, 0x61][..]),
     ];
+    let value_v = vec![
+        Some(&[0x0C, 0x01][..]),
+        Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x02][..]),
+    ];
     let typed_value_v = vec![Some(21), Some(3)];
 
-    let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
     let metadata_v_array = Arc::new(BinaryArray::from(metadata_v)) as ArrayRef;
+    let value_v_array = Arc::new(BinaryArray::from(value_v)) as ArrayRef;
     let typed_value_v_array = Arc::new(Int32Array::from(typed_value_v)) as ArrayRef;
 
     let variant_arrow = ArrowDataType::Struct(
         vec![
-            Field::new("value", ArrowDataType::Binary, true),
             Field::new("metadata", ArrowDataType::Binary, true),
+            Field::new("value", ArrowDataType::Binary, true),
             Field::new("typed_value", ArrowDataType::Int32, true),
         ]
         .into(),
@@ -1073,7 +1073,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     let variant_v_array = StructArray::try_new(
         fields.clone(),
-        vec![value_v_array, metadata_v_array, typed_value_v_array],
+        vec![metadata_v_array, value_v_array, typed_value_v_array],
         None,
     )?;
 
