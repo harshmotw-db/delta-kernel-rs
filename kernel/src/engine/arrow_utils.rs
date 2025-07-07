@@ -266,10 +266,9 @@ fn _count_cols(dt: &ArrowDataType) -> usize {
 fn validate_parquet_variant(field: &ArrowField) -> DeltaResult<()> {
     fn variant_parquet_error(field_name: &String) -> Error {
         Error::Generic(format!(
-            "The field {} presumed to be of Variant type might be \
+            "The field {field_name} presumed to be of Variant type might be \
             shredded in the parquet file. The default engine does not support \
-            shredded reads yet.",
-            field_name
+            shredded reads yet."
         ))
     }
     match field.data_type() {
@@ -323,8 +322,7 @@ fn get_indices(
             match field.data_type() {
                 ArrowDataType::Struct(fields) => {
                     if let DataType::Struct(ref requested_schema)
-                    | DataType::Variant(ref requested_schema) =
-                        requested_field.data_type
+                    | DataType::Variant(ref requested_schema) = requested_field.data_type
                     {
                         let (parquet_advance, children) = get_indices(
                             parquet_index + parquet_offset,

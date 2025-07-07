@@ -169,8 +169,7 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                 } else {
                     // TODO: Test this
                     Err(ArrowError::SchemaError(format!(
-                        "Incorrect Variant Schema: {}",
-                        t
+                        "Incorrect Variant Schema: {t}"
                     )))
                 }
             }

@@ -632,7 +632,7 @@ where
     let str_value = String::deserialize(deserializer)?;
     require!(
         str_value == "variant",
-        serde::de::Error::custom(format!("Invalid variant: {}", str_value))
+        serde::de::Error::custom(format!("Invalid variant: {str_value}"))
     );
     match unshredded_variant_schema() {
         DataType::Variant(st) => Ok(st),
