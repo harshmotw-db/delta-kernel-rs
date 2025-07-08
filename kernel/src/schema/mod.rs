@@ -636,7 +636,7 @@ where
     match unshredded_variant_schema() {
         DataType::Variant(st) => Ok(st),
         _ => Err(serde::de::Error::custom(
-            "Issue in unshredded_variant_schema(). Please contact support.",
+            "Issue in unshredded_variant_schema(). Please contact developers.",
         )),
     }
 }
