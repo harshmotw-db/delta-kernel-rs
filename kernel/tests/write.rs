@@ -932,7 +932,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let engine = Arc::new(engine);
     let write_context = Arc::new(txn.get_write_context(Some(write_schema.clone())));
 
-    let write_metadata = engine
+    let add_files_metadata = engine
         .write_parquet(
             &ArrowEngineData::new(data.clone()),
             write_context.as_ref(),
@@ -941,7 +941,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-    txn.add_write_metadata(write_metadata);
+    txn.add_files(add_files_metadata);
 
     // Commit the transaction
     txn.commit(engine.as_ref())?;
@@ -1089,7 +1089,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     let engine = Arc::new(engine);
     let write_context = Arc::new(txn.get_write_context(Some(shredded_write_schema.clone())));
 
-    let write_metadata = engine
+    let add_files_metadata = engine
         .write_parquet(
             &ArrowEngineData::new(data.clone()),
             write_context.as_ref(),
@@ -1098,7 +1098,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
         )
         .await?;
 
-    txn.add_write_metadata(write_metadata);
+    txn.add_files(add_files_metadata);
 
     // Commit the transaction
     txn.commit(engine.as_ref())?;
