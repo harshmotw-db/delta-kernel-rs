@@ -7,7 +7,7 @@ use crate::arrow::datatypes::{
     SchemaRef as ArrowSchemaRef, TimeUnit,
 };
 use crate::arrow::error::ArrowError;
-use crate::engine::arrow_utils::variant_arrow_type;
+use crate::engine::arrow_data::variant_arrow_type;
 use crate::schema::variant_utils::unshredded_variant_schema;
 use itertools::Itertools;
 

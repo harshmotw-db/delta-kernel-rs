@@ -782,13 +782,6 @@ pub(crate) fn to_json_bytes(
     Ok(writer.into_inner())
 }
 
-pub fn variant_arrow_type() -> ArrowDataType {
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
-    let fields = vec![metadata_field, value_field];
-    ArrowDataType::Struct(fields.into())
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

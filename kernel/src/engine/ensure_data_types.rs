@@ -259,7 +259,7 @@ mod tests {
     use crate::arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Fields};
 
     use crate::engine::arrow_conversion::TryFromKernel as _;
-    use crate::engine::arrow_utils::variant_arrow_type;
+    use crate::engine::arrow_data::variant_arrow_type;
     use crate::schema::variant_utils::unshredded_variant_schema;
     use crate::schema::{ArrayType, DataType, MapType, StructField};
 

@@ -17,8 +17,7 @@ use serde_json::json;
 use serde_json::Deserializer;
 
 use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
-use delta_kernel::engine::arrow_data::ArrowEngineData;
-use delta_kernel::engine::arrow_utils::variant_arrow_type;
+use delta_kernel::engine::arrow_data::{variant_arrow_type, ArrowEngineData};
 use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
 use delta_kernel::DeltaResult;
