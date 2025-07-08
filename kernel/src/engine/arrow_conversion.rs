@@ -167,7 +167,6 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                 if *t == unshredded_variant_schema() {
                     Ok(variant_arrow_type())
                 } else {
-                    // TODO: Test this
                     Err(ArrowError::SchemaError(format!(
                         "Incorrect Variant Schema: {t}"
                     )))
@@ -316,6 +315,24 @@ mod tests {
             new_metadata.get("description").unwrap(),
             &"hello world".to_owned()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_variant_shredded_type_fail() -> DeltaResult<()> {
+        let unshredded_variant = unshredded_variant_schema();
+        let unshredded_variant_arrow = ArrowDataType::try_from_kernel(&unshredded_variant)?;
+        assert!(unshredded_variant_arrow == variant_arrow_type());
+        let shredded_variant = DataType::variant_type([
+            StructField::nullable("metadata", DataType::BINARY),
+            StructField::nullable("value", DataType::BINARY),
+            StructField::nullable("typed_value", DataType::INTEGER),
+        ]);
+        let shredded_variant_arrow = ArrowDataType::try_from_kernel(&shredded_variant);
+        assert!(shredded_variant_arrow
+            .unwrap_err()
+            .to_string()
+            .contains("Incorrect Variant Schema"));
         Ok(())
     }
 }

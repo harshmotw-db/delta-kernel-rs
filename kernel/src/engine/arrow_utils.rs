@@ -933,6 +933,22 @@ mod tests {
                 true,
             )
         }
+        fn incorrect_variant_parquet_schema() -> ArrowField {
+            ArrowField::new(
+                "v",
+                ArrowDataType::Struct(
+                    vec![
+                        ArrowField::new("field1", ArrowDataType::Binary, true),
+                        ArrowField::new("field2", ArrowDataType::Binary, true),
+                    ]
+                    .into(),
+                ),
+                true,
+            )
+        }
+        fn scalar_variant_parquet_schema() -> ArrowField {
+            ArrowField::new("v", ArrowDataType::Int16, true)
+        }
         // Top level variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "v",
@@ -942,11 +958,21 @@ mod tests {
             Arc::new(ArrowSchema::new(vec![unshredded_variant_parquet_schema()]));
         let shredded_parquet_schema =
             Arc::new(ArrowSchema::new(vec![shredded_variant_parquet_schema()]));
+        let incorrect_parquet_schema =
+            Arc::new(ArrowSchema::new(vec![incorrect_variant_parquet_schema()]));
+        let scalar_parquet_schema =
+            Arc::new(ArrowSchema::new(vec![scalar_variant_parquet_schema()]));
         let result_unshredded =
             get_requested_indices(&requested_schema, &unshredded_parquet_schema);
         assert!(result_unshredded.is_ok());
         let result_shredded = get_requested_indices(&requested_schema, &shredded_parquet_schema);
         assert!(matches!(result_shredded,
+            Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
+        let result_incorrect = get_requested_indices(&requested_schema, &incorrect_parquet_schema);
+        assert!(matches!(result_incorrect,
+            Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
+        let result_scalar = get_requested_indices(&requested_schema, &scalar_parquet_schema);
+        assert!(matches!(result_scalar,
             Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
 
         // Struct of Variant
