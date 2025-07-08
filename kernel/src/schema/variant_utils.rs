@@ -63,26 +63,20 @@ mod tests {
 
     #[test]
     fn test_is_unshredded_variant() {
-        assert!(!is_unshredded_variant(
-            &DataType::variant_type([
-                StructField::nullable("metadata", DataType::BINARY),
-                StructField::nullable("value", DataType::BINARY),
-                StructField::nullable("another_field", DataType::BINARY),
-            ])
-            .into()
-        ));
-        assert!(is_unshredded_variant(
-            &DataType::variant_type([
-                StructField::nullable("metadata", DataType::BINARY),
-                StructField::nullable("value", DataType::BINARY),
-            ])
-            .into()
-        ));
+        assert!(!is_unshredded_variant(&DataType::variant_type([
+            StructField::nullable("metadata", DataType::BINARY),
+            StructField::nullable("value", DataType::BINARY),
+            StructField::nullable("another_field", DataType::BINARY),
+        ])));
+        assert!(is_unshredded_variant(&DataType::variant_type([
+            StructField::nullable("metadata", DataType::BINARY),
+            StructField::nullable("value", DataType::BINARY),
+        ])));
     }
 
     #[test]
     fn test_variant_feature_validation() {
-        let features = vec![
+        let features = [
             (ReaderFeature::VariantType, WriterFeature::VariantType),
             (
                 ReaderFeature::VariantTypePreview,

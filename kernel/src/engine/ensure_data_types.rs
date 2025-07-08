@@ -335,14 +335,11 @@ mod tests {
             ArrowDataType::Struct(fields.into())
         }
 
+        assert!(
+            ensure_data_types(&unshredded_variant_schema(), &variant_arrow_type(), true).is_ok()
+        );
         assert!(ensure_data_types(
-            &unshredded_variant_schema().into(),
-            &variant_arrow_type(),
-            true
-        )
-        .is_ok());
-        assert!(ensure_data_types(
-            &unshredded_variant_schema().into(),
+            &unshredded_variant_schema(),
             &variant_arrow_type_without_tag(),
             true
         )

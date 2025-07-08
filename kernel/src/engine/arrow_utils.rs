@@ -973,7 +973,7 @@ mod tests {
         // Array of Variant
         let requested_schema = Arc::new(StructType::new([StructField::nullable(
             "array_v",
-            ArrayType::new(unshredded_variant_schema().into(), true),
+            ArrayType::new(unshredded_variant_schema(), true),
         )]));
         let unshredded_parquet_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "array_v",

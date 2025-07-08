@@ -1175,7 +1175,7 @@ mod tests {
         }
         "#;
         let field: StructField = serde_json::from_str(data).unwrap();
-        assert_eq!(field.data_type, unshredded_variant_schema().into());
+        assert_eq!(field.data_type, unshredded_variant_schema());
 
         let json_str = serde_json::to_string(&field).unwrap();
         assert_eq!(
