@@ -328,9 +328,9 @@ mod tests {
 
     #[test]
     fn ensure_variants() {
-        fn variant_arrow_type_without_tag() -> ArrowDataType {
-            let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
-            let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+        fn incorrect_variant_arrow_type() -> ArrowDataType {
+            let metadata_field = ArrowField::new("field_1", ArrowDataType::Binary, true);
+            let value_field = ArrowField::new("field_2", ArrowDataType::Binary, true);
             let fields = vec![metadata_field, value_field];
             ArrowDataType::Struct(fields.into())
         }
@@ -340,7 +340,7 @@ mod tests {
         );
         assert!(ensure_data_types(
             &unshredded_variant_schema(),
-            &variant_arrow_type_without_tag(),
+            &incorrect_variant_arrow_type(),
             true
         )
         .is_err());

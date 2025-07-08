@@ -1,6 +1,6 @@
 //! Some utilities for working with arrow data types
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 
@@ -782,14 +782,8 @@ pub(crate) fn to_json_bytes(
     Ok(writer.into_inner())
 }
 
-/// The variant type for arrow is a struct where where the `metadata` field is tagged with some
-/// additional metadata saying `__VARIANT__ = true`.
 pub fn variant_arrow_type() -> ArrowDataType {
-    let mut tag = HashMap::new();
-    tag.insert("__VARIANT__".to_string(), "true".to_string());
-
-    let metadata_field =
-        ArrowField::new("metadata", ArrowDataType::Binary, true).with_metadata(tag);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
     let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
     let fields = vec![metadata_field, value_field];
     ArrowDataType::Struct(fields.into())
