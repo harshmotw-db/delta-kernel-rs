@@ -270,7 +270,7 @@ mod tests {
         for (feature, expected) in cases {
             assert_eq!(feature.to_string(), expected);
             let serialized = serde_json::to_string(&feature).unwrap();
-            assert_eq!(serialized, format!("\"{}\"", expected));
+            assert_eq!(serialized, format!("\"{expected}\""));
 
             let deserialized: ReaderFeature = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, feature);
@@ -316,7 +316,7 @@ mod tests {
         for (feature, expected) in cases {
             assert_eq!(feature.to_string(), expected);
             let serialized = serde_json::to_string(&feature).unwrap();
-            assert_eq!(serialized, format!("\"{}\"", expected));
+            assert_eq!(serialized, format!("\"{expected}\""));
 
             let deserialized: WriterFeature = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, feature);

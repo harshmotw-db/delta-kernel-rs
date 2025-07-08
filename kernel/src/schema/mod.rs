@@ -524,8 +524,7 @@ impl DecimalType {
         require!(
             0 < precision && precision <= 38,
             Error::invalid_decimal(format!(
-                "precision must be in range 1..38 inclusive, found: {}.",
-                precision
+                "precision must be in range 1..38 inclusive, found: {precision}."
             ))
         );
         require!(
@@ -599,7 +598,7 @@ where
     let str_value = String::deserialize(deserializer)?;
     require!(
         str_value.starts_with("decimal(") && str_value.ends_with(')'),
-        serde::de::Error::custom(format!("Invalid decimal: {}", str_value))
+        serde::de::Error::custom(format!("Invalid decimal: {str_value}"))
     );
 
     let mut parts = str_value[8..str_value.len() - 1].split(',');
@@ -607,13 +606,13 @@ where
         .next()
         .and_then(|part| part.trim().parse::<u8>().ok())
         .ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid precision in decimal: {}", str_value))
+            serde::de::Error::custom(format!("Invalid precision in decimal: {str_value}"))
         })?;
     let scale = parts
         .next()
         .and_then(|part| part.trim().parse::<u8>().ok())
         .ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid scale in decimal: {}", str_value))
+            serde::de::Error::custom(format!("Invalid scale in decimal: {str_value}"))
         })?;
     DecimalType::try_new(precision, scale).map_err(serde::de::Error::custom)
 }
@@ -775,7 +774,7 @@ impl DataType {
 impl Display for DataType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataType::Primitive(p) => write!(f, "{}", p),
+            DataType::Primitive(p) => write!(f, "{p}"),
             DataType::Array(a) => write!(f, "array<{}>", a.element_type),
             DataType::Struct(s) => {
                 write!(f, "struct<")?;
