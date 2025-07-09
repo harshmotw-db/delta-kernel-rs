@@ -10,8 +10,8 @@ use std::borrow::Cow;
 /// Simple API used to obtain the unshredded Variant struct schema
 pub fn unshredded_variant_schema() -> DataType {
     DataType::variant_type([
-        StructField::nullable("metadata", DataType::BINARY),
-        StructField::nullable("value", DataType::BINARY),
+        StructField::not_null("metadata", DataType::BINARY),
+        StructField::not_null("value", DataType::BINARY),
     ])
 }
 
@@ -64,13 +64,13 @@ mod tests {
     #[test]
     fn test_is_unshredded_variant() {
         assert!(!is_unshredded_variant(&DataType::variant_type([
-            StructField::nullable("metadata", DataType::BINARY),
+            StructField::not_null("metadata", DataType::BINARY),
             StructField::nullable("value", DataType::BINARY),
             StructField::nullable("another_field", DataType::BINARY),
         ])));
         assert!(is_unshredded_variant(&DataType::variant_type([
-            StructField::nullable("metadata", DataType::BINARY),
-            StructField::nullable("value", DataType::BINARY),
+            StructField::not_null("metadata", DataType::BINARY),
+            StructField::not_null("value", DataType::BINARY),
         ])));
     }
 

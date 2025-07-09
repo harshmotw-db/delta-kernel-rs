@@ -24,8 +24,8 @@ pub struct ArrowEngineData {
 }
 
 pub fn variant_arrow_type() -> ArrowDataType {
-    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, true);
-    let value_field = ArrowField::new("value", ArrowDataType::Binary, true);
+    let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, false);
+    let value_field = ArrowField::new("value", ArrowDataType::Binary, false);
     let fields = vec![metadata_field, value_field];
     ArrowDataType::Struct(fields.into())
 }
