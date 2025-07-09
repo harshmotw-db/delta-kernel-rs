@@ -800,6 +800,18 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     // setup tracing
     let _ = tracing_subscriber::fmt::try_init();
+    fn unshredded_variant_schema_flipped() -> DataType {
+        DataType::variant_type([
+            StructField::not_null("value", DataType::BINARY),
+            StructField::not_null("metadata", DataType::BINARY),
+        ])
+    }
+    fn variant_arrow_type_flipped() -> ArrowDataType {
+        let metadata_field = Field::new("metadata", ArrowDataType::Binary, false);
+        let value_field = Field::new("value", ArrowDataType::Binary, false);
+        let fields = vec![value_field, metadata_field];
+        ArrowDataType::Struct(fields.into())
+    }
 
     // create a table with VARIANT column
     let table_schema = Arc::new(StructType::new(vec![
@@ -811,9 +823,10 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             .add_metadata([("delta.columnMapping.id", 2)]),
         StructField::nullable(
             "nested",
+            // We flip the value and metadata fields in the actual parquet file for the test
             StructType::new(vec![StructField::nullable(
                 "nested_v",
-                unshredded_variant_schema(),
+                unshredded_variant_schema_flipped(),
             )
             .with_metadata([("delta.columnMapping.physicalName", "col21")])
             .add_metadata([("delta.columnMapping.id", 3)])]),
@@ -829,7 +842,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             "col3",
             StructType::new(vec![StructField::nullable(
                 "col21",
-                unshredded_variant_schema(),
+                unshredded_variant_schema_flipped(),
             )]),
         ),
     ]));
@@ -882,14 +895,21 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         Some(&[0x02, 0x01, 0x00, 0x00, 0x01, 0x03][..]),
     ];
 
-    let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
     let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
+    let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
 
     let variant_arrow = variant_arrow_type();
+    let variant_arrow_flipped = variant_arrow_type_flipped();
 
     let i_values = vec![31, 32, 33];
 
     let fields = match variant_arrow {
+        ArrowDataType::Struct(fields) => Ok(fields),
+        _ => Err(KernelError::Generic(
+            "Variant arrow data type is not struct.".to_string(),
+        )),
+    }?;
+    let fields_flipped = match variant_arrow_flipped {
         ArrowDataType::Struct(fields) => Ok(fields),
         _ => Err(KernelError::Generic(
             "Variant arrow data type is not struct.".to_string(),
@@ -905,9 +925,9 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let variant_nested_v_array = Arc::new(StructArray::try_new(
-        fields,
-        vec![metadata_nested_v_array, value_nested_v_array],
-        Some(null_bitmap),
+        fields_flipped.clone(),
+        vec![value_nested_v_array.clone(), metadata_nested_v_array.clone()],
+        Some(null_bitmap.clone()),
     )?);
 
     let data = RecordBatch::try_new(
@@ -919,7 +939,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Int32Array::from(i_values.clone())),
             // nested struct<nested_v variant>
             Arc::new(StructArray::try_new(
-                vec![Field::new("col21", variant_arrow_type(), true)].into(),
+                vec![Field::new("col21", variant_arrow_type_flipped(), true)].into(),
                 vec![variant_nested_v_array.clone()],
                 None,
             )?),
@@ -974,6 +994,13 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             )]),
         ),
     ]));
+
+    // During the read, the flipped fields should be reordered into metadata, value.
+    let variant_nested_v_array_expected = Arc::new(StructArray::try_new(
+        fields,
+        vec![metadata_nested_v_array, value_nested_v_array],
+        Some(null_bitmap),
+    )?);
     let expected_data = RecordBatch::try_new(
         Arc::new(expected_schema.as_ref().try_into_arrow()?),
         vec![
@@ -984,7 +1011,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             // nested struct<nested_v variant>
             Arc::new(StructArray::try_new(
                 vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
-                vec![variant_nested_v_array],
+                vec![variant_nested_v_array_expected],
                 None,
             )?),
         ],

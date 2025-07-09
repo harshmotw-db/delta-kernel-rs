@@ -7,7 +7,6 @@ use crate::arrow::datatypes::{
     SchemaRef as ArrowSchemaRef, TimeUnit,
 };
 use crate::arrow::error::ArrowError;
-use crate::engine::arrow_data::variant_arrow_type;
 use crate::schema::variant_utils::unshredded_variant_schema;
 use itertools::Itertools;
 
@@ -163,12 +162,17 @@ impl TryFromKernel<&DataType> for ArrowDataType {
                 Arc::new(m.as_ref().try_into_arrow()?),
                 false,
             )),
-            DataType::Variant(_) => {
+            DataType::Variant(s) => {
                 if *t == unshredded_variant_schema() {
-                    Ok(variant_arrow_type())
+                    Ok(ArrowDataType::Struct(
+                        s.fields()
+                            .map(TryIntoArrow::try_into_arrow)
+                            .collect::<Result<Vec<ArrowField>, ArrowError>>()?
+                            .into(),
+                    ))
                 } else {
                     Err(ArrowError::SchemaError(format!(
-                        "Incorrect Variant Schema: {t}"
+                        "Incorrect Variant Schema: {t}. Only the unshredded variant schema is supported right now."
                     )))
                 }
             }
@@ -296,6 +300,7 @@ impl TryFromArrow<&ArrowDataType> for DataType {
 mod tests {
     use super::*;
     use crate::engine::arrow_conversion::ArrowField;
+    use crate::engine::arrow_data::variant_arrow_type;
     use crate::{
         schema::{DataType, StructField},
         DeltaResult,

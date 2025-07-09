@@ -676,8 +676,8 @@ pub enum DataType {
     /// A map stores an arbitrary length collection of key-value pairs
     /// with a single keyType and a single valueType
     Map(Box<MapType>),
-    /// The Variant data type. While Variant may have a flexible physical representation to
-    /// facilitate shredded reads, it is a primitive type from a logical perspective.
+    /// The Variant data type. The physical representation can be flexible to support shredded
+    /// reads. The unshredded schema is `Variant(StructType<metadata: BINARY, value: BINARY>)`.
     #[serde(
         serialize_with = "serialize_variant",
         deserialize_with = "deserialize_variant",
