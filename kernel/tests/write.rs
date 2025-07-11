@@ -926,7 +926,10 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let variant_nested_v_array = Arc::new(StructArray::try_new(
         fields_flipped.clone(),
-        vec![value_nested_v_array.clone(), metadata_nested_v_array.clone()],
+        vec![
+            value_nested_v_array.clone(),
+            metadata_nested_v_array.clone(),
+        ],
         Some(null_bitmap.clone()),
     )?);
 
