@@ -22,6 +22,7 @@ use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
 use delta_kernel::DeltaResult;
 use delta_kernel::Error as KernelError;
+use delta_kernel::Snapshot;
 
 use test_utils::{create_table, engine_store_setup, setup_test_tables};
 
@@ -79,13 +80,12 @@ async fn test_commit_info() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
         let commit_info = new_commit_info()?;
 
         // create a transaction
-        let txn = table
-            .new_transaction(&engine)?
-            .with_commit_info(commit_info);
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let txn = snapshot.transaction()?.with_commit_info(commit_info);
 
         // commit!
         txn.commit(&engine)?;
@@ -130,9 +130,10 @@ async fn test_empty_commit() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
         assert!(matches!(
-            table.new_transaction(&engine)?.commit(&engine).unwrap_err(),
+            snapshot.transaction()?.commit(&engine).unwrap_err(),
             KernelError::MissingCommitInfo
         ));
     }
@@ -149,13 +150,14 @@ async fn test_invalid_commit_info() -> Result<(), Box<dyn std::error::Error>> {
         "number",
         DataType::INTEGER,
     )]));
-    for (table, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in setup_test_tables(schema, &[]).await? {
         // empty commit info test
         let commit_info_schema = Arc::new(ArrowSchema::empty());
         let commit_info_batch = RecordBatch::new_empty(commit_info_schema.clone());
         assert!(commit_info_batch.num_rows() == 0);
-        let txn = table
-            .new_transaction(&engine)?
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let txn = snapshot
+            .transaction()?
             .with_commit_info(Box::new(ArrowEngineData::new(commit_info_batch)));
 
         // commit!
@@ -178,8 +180,9 @@ async fn test_invalid_commit_info() -> Result<(), Box<dyn std::error::Error>> {
             ]))],
         )?;
 
-        let txn = table
-            .new_transaction(&engine)?
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let txn = snapshot
+            .transaction()?
             .with_commit_info(Box::new(ArrowEngineData::new(commit_info_batch)));
 
         // commit!
@@ -258,12 +261,11 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table, engine, store, table_name) in setup_test_tables(schema.clone(), &[]).await? {
+    for (table_url, engine, store, table_name) in setup_test_tables(schema.clone(), &[]).await? {
         let commit_info = new_commit_info()?;
 
-        let mut txn = table
-            .new_transaction(&engine)?
-            .with_commit_info(commit_info);
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
 
         // create two new arrow record batches to append
         let append_data = [[1, 2, 3], [4, 5, 6]].map(|data| -> DeltaResult<_> {
@@ -365,7 +367,7 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
                 Arc::new(schema.as_ref().try_into_arrow()?),
                 vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5, 6]))],
             )?),
-            &table,
+            &table_url,
             engine,
         )?;
     }
@@ -390,14 +392,13 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table, engine, store, table_name) in
+    for (table_url, engine, store, table_name) in
         setup_test_tables(table_schema.clone(), &[partition_col]).await?
     {
         let commit_info = new_commit_info()?;
 
-        let mut txn = table
-            .new_transaction(&engine)?
-            .with_commit_info(commit_info);
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
 
         // create two new arrow record batches to append
         let append_data = [[1, 2, 3], [4, 5, 6]].map(|data| -> DeltaResult<_> {
@@ -510,7 +511,7 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
                     Arc::new(StringArray::from(vec!["a", "a", "a", "b", "b", "b"])),
                 ],
             )?),
-            &table,
+            &table_url,
             engine,
         )?;
     }
@@ -532,12 +533,11 @@ async fn test_append_invalid_schema() -> Result<(), Box<dyn std::error::Error>> 
         DataType::STRING,
     )]));
 
-    for (table, engine, _store, _table_name) in setup_test_tables(table_schema, &[]).await? {
+    for (table_url, engine, _store, _table_name) in setup_test_tables(table_schema, &[]).await? {
         let commit_info = new_commit_info()?;
 
-        let txn = table
-            .new_transaction(&engine)?
-            .with_commit_info(commit_info);
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let txn = snapshot.transaction()?.with_commit_info(commit_info);
 
         // create two new arrow record batches to append
         let append_data = [["a", "b"], ["c", "d"]].map(|data| -> DeltaResult<_> {
@@ -590,21 +590,23 @@ async fn test_write_txn_actions() -> Result<(), Box<dyn std::error::Error>> {
         DataType::INTEGER,
     )]));
 
-    for (table, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
+    for (table_url, engine, store, table_name) in setup_test_tables(schema, &[]).await? {
         let commit_info = new_commit_info()?;
 
         // can't have duplicate app_id in same transaction
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
         assert!(matches!(
-            table
-                .new_transaction(&engine)?
+            snapshot
+                .transaction()?
                 .with_transaction_id("app_id1".to_string(), 0)
                 .with_transaction_id("app_id1".to_string(), 1)
                 .commit(&engine),
             Err(KernelError::Generic(msg)) if msg == "app_id app_id1 already exists in transaction"
         ));
 
-        let txn = table
-            .new_transaction(&engine)?
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+        let txn = snapshot
+            .transaction()?
             .with_commit_info(commit_info)
             .with_transaction_id("app_id1".to_string(), 1)
             .with_transaction_id("app_id2".to_string(), 2);
@@ -612,7 +614,7 @@ async fn test_write_txn_actions() -> Result<(), Box<dyn std::error::Error>> {
         // commit!
         txn.commit(&engine)?;
 
-        let snapshot = Arc::new(table.snapshot(&engine, 1.into())?);
+        let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, Some(1))?);
         assert_eq!(
             snapshot.clone().get_app_id_version("app_id1", &engine)?,
             Some(1)
@@ -721,7 +723,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     )]));
 
     let (store, engine, table_location) = engine_store_setup("test_table_timestamp_ntz", true);
-    let table = create_table(
+    let table_url = create_table(
         store.clone(),
         table_location,
         schema.clone(),
@@ -735,9 +737,8 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
 
     let commit_info = new_commit_info()?;
 
-    let mut txn = table
-        .new_transaction(&engine)?
-        .with_commit_info(commit_info);
+    let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+    let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
 
     // Create Arrow data with TIMESTAMP_NTZ values including edge cases
     // These are microseconds since Unix epoch
@@ -791,7 +792,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     assert!(parsed_commits[1].get("add").is_some());
 
     // Verify the data can be read back correctly
-    test_read(&ArrowEngineData::new(data), &table, engine)?;
+    test_read(&ArrowEngineData::new(data), &table_url, engine)?;
 
     Ok(())
 }
@@ -848,7 +849,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     ]));
 
     let (store, engine, table_location) = engine_store_setup("test_table_variant", true);
-    let table = create_table(
+    let table_url = create_table(
         store.clone(),
         table_location,
         table_schema.clone(),
@@ -862,9 +863,11 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let commit_info = new_commit_info()?;
 
-    let mut txn = table
-        .new_transaction(&engine)?
-        .with_commit_info(commit_info);
+    let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+    let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
+    // let mut txn = table
+    //     .new_transaction(&engine)?
+    //     .with_commit_info(commit_info);
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
@@ -1021,7 +1024,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    test_read(&ArrowEngineData::new(expected_data), &table, engine)?;
+    test_read(&ArrowEngineData::new(expected_data), &table_url, engine)?;
 
     Ok(())
 }
@@ -1050,7 +1053,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     )]));
 
     let (store, engine, table_location) = engine_store_setup("test_table_variant_2", true);
-    let table = create_table(
+    let table_url = create_table(
         store.clone(),
         table_location,
         table_schema.clone(),
@@ -1064,9 +1067,11 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     let commit_info = new_commit_info()?;
 
-    let mut txn = table
-        .new_transaction(&engine)?
-        .with_commit_info(commit_info);
+    let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
+    let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
+    // let mut txn = table
+    //     .new_transaction(&engine)?
+    //     .with_commit_info(commit_info);
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
@@ -1149,7 +1154,7 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     // Check that the add action exists
     assert!(parsed_commits[1].get("add").is_some());
 
-    let res = test_read(&ArrowEngineData::new(data), &table, engine);
+    let res = test_read(&ArrowEngineData::new(data), &table_url, engine);
     assert!(matches!(res,
         Err(e) if e.to_string().contains("The default engine does not support shredded reads")));
 
