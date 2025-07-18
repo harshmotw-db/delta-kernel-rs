@@ -300,7 +300,7 @@ impl TryFromArrow<&ArrowDataType> for DataType {
 mod tests {
     use super::*;
     use crate::engine::arrow_conversion::ArrowField;
-    use crate::engine::arrow_data::variant_arrow_type;
+    use crate::engine::arrow_data::unshredded_variant_arrow_type;
     use crate::{
         schema::{DataType, StructField},
         DeltaResult,
@@ -327,7 +327,7 @@ mod tests {
     fn test_variant_shredded_type_fail() -> DeltaResult<()> {
         let unshredded_variant = unshredded_variant_schema();
         let unshredded_variant_arrow = ArrowDataType::try_from_kernel(&unshredded_variant)?;
-        assert!(unshredded_variant_arrow == variant_arrow_type());
+        assert!(unshredded_variant_arrow == unshredded_variant_arrow_type());
         let shredded_variant = DataType::variant_type([
             StructField::nullable("metadata", DataType::BINARY),
             StructField::nullable("value", DataType::BINARY),

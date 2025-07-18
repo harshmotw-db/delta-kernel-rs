@@ -23,7 +23,9 @@ pub struct ArrowEngineData {
     data: RecordBatch,
 }
 
-pub fn variant_arrow_type() -> ArrowDataType {
+/// unshredded variant arrow type: struct of two non-nullable binary fields 'metadata' and 'value'
+#[allow(dead_code)]
+pub(crate) fn unshredded_variant_arrow_type() -> ArrowDataType {
     let metadata_field = ArrowField::new("metadata", ArrowDataType::Binary, false);
     let value_field = ArrowField::new("value", ArrowDataType::Binary, false);
     let fields = vec![metadata_field, value_field];

@@ -954,8 +954,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("metadata", ArrowDataType::Binary, true),
-                        ArrowField::new("value", ArrowDataType::Binary, true),
+                        ArrowField::new("metadata", ArrowDataType::Binary, false),
+                        ArrowField::new("value", ArrowDataType::Binary, false),
                     ]
                     .into(),
                 ),
@@ -967,7 +967,7 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("metadata", ArrowDataType::Binary, true),
+                        ArrowField::new("metadata", ArrowDataType::Binary, false),
                         ArrowField::new("value", ArrowDataType::Binary, true),
                         ArrowField::new("typed_value", ArrowDataType::Int32, true),
                     ]
@@ -981,8 +981,8 @@ mod tests {
                 "v",
                 ArrowDataType::Struct(
                     vec![
-                        ArrowField::new("field1", ArrowDataType::Binary, true),
-                        ArrowField::new("field2", ArrowDataType::Binary, true),
+                        ArrowField::new("field1", ArrowDataType::Binary, false),
+                        ArrowField::new("field2", ArrowDataType::Binary, false),
                     ]
                     .into(),
                 ),

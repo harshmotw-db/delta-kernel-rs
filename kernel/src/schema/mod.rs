@@ -636,7 +636,8 @@ where
     match unshredded_variant_schema() {
         DataType::Variant(st) => Ok(st),
         _ => Err(serde::de::Error::custom(
-            "Issue in unshredded_variant_schema(). Please contact developers.",
+            "Issue in unshredded_variant_schema(). Please raise an issue at ".to_string()
+                + "delta-io/delta-kernel-rs.",
         )),
     }
 }
@@ -680,8 +681,7 @@ pub enum DataType {
     /// reads. The unshredded schema is `Variant(StructType<metadata: BINARY, value: BINARY>)`.
     #[serde(
         serialize_with = "serialize_variant",
-        deserialize_with = "deserialize_variant",
-        untagged
+        deserialize_with = "deserialize_variant"
     )]
     Variant(Box<StructType>),
 }

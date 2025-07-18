@@ -262,7 +262,7 @@ impl Scalar {
                 }
             }
             DataType::Variant(_) => {
-                return Err::<(), Error>(Error::unsupported(
+                return Err(Error::unsupported(
                     "Variant is not supported as scalar yet.",
                 ));
             }

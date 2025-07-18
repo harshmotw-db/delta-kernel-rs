@@ -16,7 +16,8 @@ pub fn unshredded_variant_schema() -> DataType {
 }
 
 /// Simple API to test if a given DataType refers to an unshredded Variant.
-pub fn is_unshredded_variant(s: &DataType) -> bool {
+#[allow(dead_code)]
+pub(crate) fn is_unshredded_variant(s: &DataType) -> bool {
     s == &unshredded_variant_schema()
 }
 

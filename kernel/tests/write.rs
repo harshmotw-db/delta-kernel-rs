@@ -18,8 +18,8 @@ use itertools::Itertools;
 use serde_json::json;
 use serde_json::Deserializer;
 
-use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
-use delta_kernel::engine::arrow_data::{variant_arrow_type, ArrowEngineData};
+use delta_kernel::engine::arrow_conversion::{TryFromKernel, TryIntoArrow as _};
+use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
 use delta_kernel::Error as KernelError;
@@ -900,7 +900,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
     let value_nested_v_array = Arc::new(BinaryArray::from(value_nested_v)) as ArrayRef;
     let metadata_nested_v_array = Arc::new(BinaryArray::from(metadata_nested_v)) as ArrayRef;
 
-    let variant_arrow = variant_arrow_type();
+    let variant_arrow = ArrowDataType::try_from_kernel(&unshredded_variant_schema()).unwrap();
     let variant_arrow_flipped = variant_arrow_type_flipped();
 
     let i_values = vec![31, 32, 33];
@@ -1011,6 +1011,8 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
         vec![metadata_nested_v_array, value_nested_v_array],
         Some(null_bitmap),
     )?);
+    let variant_arrow_type: ArrowDataType =
+        ArrowDataType::try_from_kernel(&unshredded_variant_schema()).unwrap();
     let expected_data = RecordBatch::try_new(
         Arc::new(expected_schema.as_ref().try_into_arrow()?),
         vec![
@@ -1020,7 +1022,7 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Int32Array::from(i_values)),
             // nested struct<nested_v variant>
             Arc::new(StructArray::try_new(
-                vec![Field::new("nested_v", variant_arrow_type(), true)].into(),
+                vec![Field::new("nested_v", variant_arrow_type, true)].into(),
                 vec![variant_nested_v_array_expected],
                 None,
             )?),
