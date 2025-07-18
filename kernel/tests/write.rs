@@ -10,6 +10,8 @@ use delta_kernel::arrow::datatypes::{DataType as ArrowDataType, Field, Schema as
 use delta_kernel::arrow::error::ArrowError;
 use delta_kernel::arrow::record_batch::RecordBatch;
 
+use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
+use delta_kernel::engine::default::parquet::DefaultParquetHandler;
 use delta_kernel::object_store::path::Path;
 use delta_kernel::object_store::ObjectStore;
 use itertools::Itertools;
@@ -20,9 +22,9 @@ use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::{variant_arrow_type, ArrowEngineData};
 use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
-use delta_kernel::DeltaResult;
 use delta_kernel::Error as KernelError;
 use delta_kernel::Snapshot;
+use delta_kernel::{DeltaResult, Engine};
 
 use test_utils::{create_table, engine_store_setup, setup_test_tables};
 
@@ -278,7 +280,7 @@ async fn test_append() -> Result<(), Box<dyn std::error::Error>> {
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context(None));
+        let write_context = Arc::new(txn.get_write_context());
         let tasks = append_data.into_iter().map(|data| {
             // arc clones
             let engine = engine.clone();
@@ -412,7 +414,7 @@ async fn test_append_partitioned() -> Result<(), Box<dyn std::error::Error>> {
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context(None));
+        let write_context = Arc::new(txn.get_write_context());
         let tasks = append_data
             .into_iter()
             .zip(partition_vals)
@@ -550,7 +552,7 @@ async fn test_append_invalid_schema() -> Result<(), Box<dyn std::error::Error>> 
 
         // write data out by spawning async tasks to simulate executors
         let engine = Arc::new(engine);
-        let write_context = Arc::new(txn.get_write_context(None));
+        let write_context = Arc::new(txn.get_write_context());
         let tasks = append_data.into_iter().map(|data| {
             // arc clones
             let engine = engine.clone();
@@ -758,7 +760,7 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context(None));
+    let write_context = Arc::new(txn.get_write_context());
 
     let add_files_metadata = engine
         .write_parquet(
@@ -865,9 +867,6 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
     let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
-    // let mut txn = table
-    //     .new_transaction(&engine)?
-    //     .with_commit_info(commit_info);
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
@@ -955,12 +954,17 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context(Some(write_schema.clone())));
+    // let write_context = Arc::new(txn.get_write_context(Some(write_schema.clone())));
+    let write_context = Arc::new(txn.get_write_context());
 
-    let add_files_metadata = engine
-        .write_parquet(
-            &ArrowEngineData::new(data.clone()),
-            write_context.as_ref(),
+    let add_files_metadata = (*engine)
+        .parquet_handler()
+        .as_any()
+        .downcast_ref::<DefaultParquetHandler<TokioBackgroundExecutor>>()
+        .unwrap()
+        .write_parquet_file(
+            write_context.target_dir(),
+            Box::new(ArrowEngineData::new(data.clone())),
             HashMap::new(),
             true,
         )
@@ -1069,9 +1073,6 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
 
     let snapshot = Arc::new(Snapshot::try_new(table_url.clone(), &engine, None)?);
     let mut txn = snapshot.transaction()?.with_commit_info(commit_info);
-    // let mut txn = table
-    //     .new_transaction(&engine)?
-    //     .with_commit_info(commit_info);
 
     // First value corresponds to the variant value "1". Third value corresponds to the variant
     // representing the JSON Object {"a":2}.
@@ -1121,12 +1122,17 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     .unwrap();
 
     let engine = Arc::new(engine);
-    let write_context = Arc::new(txn.get_write_context(Some(shredded_write_schema.clone())));
+    // let write_context = Arc::new(txn.get_write_context(Some(shredded_write_schema.clone())));
+    let write_context = Arc::new(txn.get_write_context());
 
-    let add_files_metadata = engine
-        .write_parquet(
-            &ArrowEngineData::new(data.clone()),
-            write_context.as_ref(),
+    let add_files_metadata = (*engine)
+        .parquet_handler()
+        .as_any()
+        .downcast_ref::<DefaultParquetHandler<TokioBackgroundExecutor>>()
+        .unwrap()
+        .write_parquet_file(
+            write_context.target_dir(),
+            Box::new(ArrowEngineData::new(data.clone())),
             HashMap::new(),
             true,
         )
