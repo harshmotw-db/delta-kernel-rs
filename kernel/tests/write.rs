@@ -954,7 +954,6 @@ async fn test_append_variant() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write data
     let engine = Arc::new(engine);
-    // let write_context = Arc::new(txn.get_write_context(Some(write_schema.clone())));
     let write_context = Arc::new(txn.get_write_context());
 
     let add_files_metadata = (*engine)
@@ -1124,7 +1123,6 @@ async fn test_shredded_variant_read_rejection() -> Result<(), Box<dyn std::error
     .unwrap();
 
     let engine = Arc::new(engine);
-    // let write_context = Arc::new(txn.get_write_context(Some(shredded_write_schema.clone())));
     let write_context = Arc::new(txn.get_write_context());
 
     let add_files_metadata = (*engine)
