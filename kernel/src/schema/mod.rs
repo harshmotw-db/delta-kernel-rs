@@ -18,7 +18,7 @@ use delta_kernel_derive::internal_api;
 
 pub(crate) mod compare;
 pub(crate) mod derive_macro_utils;
-pub mod variant_utils;
+pub(crate) mod variant_utils;
 
 pub type Schema = StructType;
 pub type SchemaRef = Arc<StructType>;

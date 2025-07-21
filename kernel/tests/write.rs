@@ -20,7 +20,6 @@ use serde_json::Deserializer;
 
 use delta_kernel::engine::arrow_conversion::{TryFromKernel, TryIntoArrow as _};
 use delta_kernel::engine::arrow_data::ArrowEngineData;
-use delta_kernel::schema::variant_utils::unshredded_variant_schema;
 use delta_kernel::schema::{DataType, StructField, StructType};
 use delta_kernel::Error as KernelError;
 use delta_kernel::Snapshot;
@@ -797,6 +796,14 @@ async fn test_append_timestamp_ntz() -> Result<(), Box<dyn std::error::Error>> {
     test_read(&ArrowEngineData::new(data), &table_url, engine)?;
 
     Ok(())
+}
+
+// TODO (@zachschuermann): Replace this with the public unshredded_variant_schema public API.
+fn unshredded_variant_schema() -> DataType {
+    DataType::variant_type([
+        StructField::not_null("metadata", DataType::BINARY),
+        StructField::not_null("value", DataType::BINARY),
+    ])
 }
 
 #[tokio::test]

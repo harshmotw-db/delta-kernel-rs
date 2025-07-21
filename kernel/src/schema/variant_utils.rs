@@ -7,18 +7,13 @@ use crate::utils::require;
 use crate::{DeltaResult, Error};
 use std::borrow::Cow;
 
-/// Simple API used to obtain the unshredded Variant struct schema
-pub fn unshredded_variant_schema() -> DataType {
+// TODO (@zachschuermann): Replace this with the public unshredded_variant_schema public API so it
+// is easy for engines to directly use.
+pub(crate) fn unshredded_variant_schema() -> DataType {
     DataType::variant_type([
         StructField::not_null("metadata", DataType::BINARY),
         StructField::not_null("value", DataType::BINARY),
     ])
-}
-
-/// Simple API to test if a given DataType refers to an unshredded Variant.
-#[allow(dead_code)]
-pub(crate) fn is_unshredded_variant(s: &DataType) -> bool {
-    s == &unshredded_variant_schema()
 }
 
 /// Schema visitor that checks if any column in the schema uses VARIANT type
@@ -64,6 +59,9 @@ mod tests {
 
     #[test]
     fn test_is_unshredded_variant() {
+        fn is_unshredded_variant(s: &DataType) -> bool {
+            s == &unshredded_variant_schema()
+        }
         assert!(!is_unshredded_variant(&DataType::variant_type([
             StructField::not_null("metadata", DataType::BINARY),
             StructField::nullable("value", DataType::BINARY),
